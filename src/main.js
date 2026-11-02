@@ -650,7 +650,17 @@
   ck.open = false; ck.x = 0; ck.z = 0;
   const ckEl = (id) => document.getElementById(id);
   let ctxAt = null;
-  const plot = (() => { try { const v = JSON.parse(localStorage.getItem("tsa:plot")); return Array.isArray(v) ? v.filter((p) => Number.isFinite(p.x) && Number.isFinite(p.z)) : []; } catch (e) { return []; } })();
+  // Plotted lines: an array of lines, each an array of {x, z}. The last line is the one new points join.
+  const plot = (() => {
+    try {
+      let v = JSON.parse(localStorage.getItem("tsa:plot"));
+      if (!Array.isArray(v)) return [];
+      if (v.length && !Array.isArray(v[0])) v = [v];               // older saves held a single line
+      const ok = (p) => p && Number.isFinite(p.x) && Number.isFinite(p.z);
+      return v.map((l) => (Array.isArray(l) ? l.filter(ok) : [])).filter((l) => l.length);
+    } catch (e) { return []; }
+  })();
+  const curLine = () => plot[plot.length - 1] || null;
   const placeIn = (el, sx, sy) => {
     el.hidden = false;
     const w = el.offsetWidth, h = el.offsetHeight;
@@ -662,8 +672,9 @@
     const p = local(e), [wx, wz] = screenToWorld(p[0], p[1]);
     ctxAt = { sx: p[0], sy: p[1], wx: Math.floor(wx), wz: Math.floor(wz) };
     ckEl("ctx-area-off").hidden = !area.on;
-    ckEl("ctx-plot-undo").hidden = ckEl("ctx-plot-clear").hidden = plot.length === 0;
-    ckEl("ctx-plot").textContent = plot.length ? `Plot point ${plot.length + 1}` : "Plot point";
+    const cl = curLine();
+    ckEl("ctx-plot-undo").hidden = ckEl("ctx-plot-clear").hidden = ckEl("ctx-plot-new").hidden = !cl;
+    ckEl("ctx-plot").textContent = cl ? `Plot point ${LINE_NAMES[plot.length - 1]}${cl.length + 1}` : "Plot point";
     ckEl("ctx-area").textContent = area.on ? "Move the square here" : "Render only a square here";
     placeIn(ctxMenu, p[0], p[1]);
     ckEl("ctx-chunky").focus();
@@ -977,60 +988,66 @@
   showImportedPreset();
 
   // ---------- plotted points and distances (right-click menu) ----------
+  const LINE_NAMES = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+  const LINE_COLORS = ["#ffffff", "#ffd24a", "#5fe0ff", "#ff8fd0", "#a6f06a", "#ffa15c"];
+  const segLen = (a, b) => Math.hypot(b.x - a.x, b.z - a.z);
   function updateMeasure() {
     try { localStorage.setItem("tsa:plot", JSON.stringify(plot)); } catch (e) { /* storage unavailable */ }
-    const box = ckEl("measure");
-    box.hidden = plot.length === 0;
+    ckEl("measure").hidden = plot.length === 0;
     const list = ckEl("m-list"); list.innerHTML = "";
-    let total = 0;
-    if (plot.length === 1) {
-      const li = document.createElement("li");
-      li.innerHTML = `<span>Point 1</span><span>${plot[0].x.toLocaleString()}, ${plot[0].z.toLocaleString()}</span>`;
-      list.appendChild(li);
-    }
-    for (let i = 1; i < plot.length; i++) {
-      const d = Math.hypot(plot[i].x - plot[i - 1].x, plot[i].z - plot[i - 1].z);
-      total += d;
-      const li = document.createElement("li");
-      li.innerHTML = `<span>${i} → ${i + 1}</span><span>${Math.round(d).toLocaleString()} blocks</span>`;
-      list.appendChild(li);
-    }
-    ckEl("m-total").innerHTML = plot.length > 2 ? `<span>Total</span><span>${Math.round(total).toLocaleString()} blocks</span>`
-      : plot.length === 1 ? `<span>Right-click another spot</span><span></span>` : "";
-    ckEl("m-total").hidden = plot.length === 2;
+    const row = (a, b, cls) => { const li = document.createElement("li"); if (cls) li.className = cls; li.innerHTML = `<span>${a}</span><span>${b}</span>`; list.appendChild(li); };
+    plot.forEach((line, li) => {
+      const name = LINE_NAMES[li % 26], color = LINE_COLORS[li % LINE_COLORS.length];
+      if (plot.length > 1) row(`<i class="mdot" style="background:${color}"></i>Line ${name}`, "", "mhead");
+      if (line.length === 1) row(`${name}1`, `${line[0].x.toLocaleString()}, ${line[0].z.toLocaleString()}`);
+      let total = 0;
+      for (let i = 1; i < line.length; i++) {
+        const d = segLen(line[i - 1], line[i]); total += d;
+        row(`${name}${i} → ${name}${i + 1}`, `${Math.round(d).toLocaleString()} blocks`);
+      }
+      if (line.length > 2) row("Total", `${Math.round(total).toLocaleString()} blocks`, "msum");
+    });
+    const cl = curLine();
+    ckEl("m-total").innerHTML = cl && cl.length === 1 ? "<span>Right-click another spot to measure</span><span></span>" : "";
+    ckEl("m-total").hidden = !(cl && cl.length === 1);
     requestDraw();
   }
-  const undoPlot = () => { plot.pop(); updateMeasure(); };
+  function undoPlot() { const cl = curLine(); if (!cl) return; cl.pop(); if (!cl.length) plot.pop(); updateMeasure(); }
   const clearPlot = () => { plot.length = 0; updateMeasure(); };
-  ckEl("ctx-plot").onclick = () => { hideCtx(); plot.push({ x: ctxAt.wx, z: ctxAt.wz }); updateMeasure(); };
+  ckEl("ctx-plot").onclick = () => { hideCtx(); if (!curLine()) plot.push([]); curLine().push({ x: ctxAt.wx, z: ctxAt.wz }); updateMeasure(); };
+  ckEl("ctx-plot-new").onclick = () => { hideCtx(); plot.push([{ x: ctxAt.wx, z: ctxAt.wz }]); updateMeasure(); };
   ckEl("ctx-plot-undo").onclick = () => { hideCtx(); undoPlot(); };
   ckEl("ctx-plot-clear").onclick = () => { hideCtx(); clearPlot(); };
   ckEl("m-undo").onclick = undoPlot;
   ckEl("m-clear").onclick = clearPlot;
   function drawPlot() {
     if (!plot.length) return;
-    const pts = plot.map((p) => worldToScreen(p.x + 0.5, p.z + 0.5));
     ctx.save();
-    ctx.lineJoin = "round";
-    if (pts.length > 1) {
-      ctx.beginPath(); pts.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
-      ctx.strokeStyle = "rgba(20, 24, 28, 0.85)"; ctx.lineWidth = 5; ctx.stroke();
-      ctx.strokeStyle = "#ffffff"; ctx.lineWidth = 2.5; ctx.stroke();
-    }
-    ctx.font = '600 12px "IBM Plex Mono", ui-monospace, monospace';
-    ctx.textAlign = "center"; ctx.textBaseline = "middle";
-    for (let i = 1; i < pts.length; i++) {
-      const d = Math.round(Math.hypot(plot[i].x - plot[i - 1].x, plot[i].z - plot[i - 1].z)).toLocaleString();
-      const mx = (pts[i][0] + pts[i - 1][0]) / 2, my = (pts[i][1] + pts[i - 1][1]) / 2;
-      const w = ctx.measureText(d).width + 10;
-      ctx.fillStyle = "rgba(20, 24, 28, 0.85)"; ctx.fillRect(mx - w / 2, my - 9, w, 18);
-      ctx.fillStyle = "#ffffff"; ctx.fillText(d, mx, my + 0.5);
-    }
-    ctx.font = '700 11px "Barlow Semi Condensed", "Arial Narrow", sans-serif';
-    pts.forEach(([x, y], i) => {
-      ctx.beginPath(); ctx.arc(x, y, 8, 0, Math.PI * 2);
-      ctx.fillStyle = "#ffffff"; ctx.fill(); ctx.lineWidth = 2; ctx.strokeStyle = "rgba(20, 24, 28, 0.9)"; ctx.stroke();
-      ctx.fillStyle = "#14181c"; ctx.fillText(String(i + 1), x, y + 0.5);
+    ctx.lineJoin = "round"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    plot.forEach((line, li) => {
+      const name = LINE_NAMES[li % 26], color = LINE_COLORS[li % LINE_COLORS.length];
+      const pts = line.map((p) => worldToScreen(p.x + 0.5, p.z + 0.5));
+      if (pts.length > 1) {
+        ctx.beginPath(); pts.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
+        ctx.strokeStyle = "rgba(20, 24, 28, 0.85)"; ctx.lineWidth = 5; ctx.stroke();
+        ctx.strokeStyle = color; ctx.lineWidth = 2.5; ctx.stroke();
+      }
+      ctx.font = '600 12px "IBM Plex Mono", ui-monospace, monospace';
+      for (let i = 1; i < pts.length; i++) {
+        const d = Math.round(segLen(line[i - 1], line[i])).toLocaleString();
+        const mx = (pts[i][0] + pts[i - 1][0]) / 2, my = (pts[i][1] + pts[i - 1][1]) / 2;
+        const w = ctx.measureText(d).width + 10;
+        ctx.fillStyle = "rgba(20, 24, 28, 0.85)"; ctx.fillRect(mx - w / 2, my - 9, w, 18);
+        ctx.fillStyle = color; ctx.fillText(d, mx, my + 0.5);
+      }
+      ctx.font = '700 10.5px "Barlow Semi Condensed", "Arial Narrow", sans-serif';
+      pts.forEach(([x, y], i) => {
+        const label = plot.length > 1 ? `${name}${i + 1}` : String(i + 1);
+        const r = label.length > 2 ? 10 : 8.5;
+        ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2);
+        ctx.fillStyle = color; ctx.fill(); ctx.lineWidth = 2; ctx.strokeStyle = "rgba(20, 24, 28, 0.9)"; ctx.stroke();
+        ctx.fillStyle = "#14181c"; ctx.fillText(label, x, y + 0.5);
+      });
     });
     ctx.restore();
   }
