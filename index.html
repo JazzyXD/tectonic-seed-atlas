@@ -714,7 +714,18 @@ const TEngine = (() => {
       // y-independent pieces stay valid but the memo was reset, so recompute what we read below at this y.
       const B = this.rest();
       if (F > 1e-6) y += B >= 0 ? 128 * B / F : 128 * B / (4 * F);
-      if (y > this.maxY) y = this.maxY;
+      // Tectonic's top slide fades terrain out between max_y - 30 and max_y - 10 (slope_upper), so peaks are
+      // squashed there instead of reaching max_y. Solid where slope_upper(y) * (1 + density) > 1.
+      const top0 = this.maxY - 30;
+      if (y > top0) {
+        let best = top0;
+        for (let yy = Math.min(y, this.maxY - 10); yy > top0; yy -= 0.25) {
+          const tt = (yy - top0) / 20, slope = 1 - 3 * tt * tt + 2 * tt * tt * tt;
+          const v = (base - yy / 128) * F, X = 4 * (v > 0 ? v : v * 0.25) + B;
+          if (slope * (1 + X) > 1) { best = yy; break; }
+        }
+        y = best;
+      }
       e.y = y; e.stamp++;
       out.h[i] = y;
       out.c[i] = this.cont();
