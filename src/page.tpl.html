@@ -80,6 +80,13 @@ button.primary { background: var(--accent); color: var(--accent-ink); border-col
 .hyrow { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .hyfield { display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: var(--muted); }
 .hyfield.changed { color: var(--accent); }
+.measure { position: absolute; z-index: 3; right: max(12px, env(safe-area-inset-right, 0px)); bottom: 12px; width: 230px; max-width: calc(100% - 24px); background: var(--sheet); border: 1px solid var(--line); border-radius: 4px; padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; box-shadow: 0 2px 10px rgb(0 0 0 / 0.12); font-size: 12.5px; }
+.measure .chunkhead { cursor: default; }
+.mlist { margin: 0; padding: 0; list-style: none; max-height: 150px; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; }
+.mlist li { display: flex; justify-content: space-between; gap: 8px; font-variant-numeric: tabular-nums; }
+.mlist li span:first-child { color: var(--muted); }
+.mlist li span:last-child, .mtotal { font: 500 12px var(--font-data); }
+.mtotal { border-top: 1px solid var(--line); padding-top: 5px; display: flex; justify-content: space-between; }
 .importrow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .importrow .hint { color: var(--muted); font-size: 12px; }
 .paste summary { cursor: pointer; color: var(--muted); font-size: 12.5px; }
@@ -244,11 +251,20 @@ details.group[open] > summary::after { content: "\2212"; }
         <div class="coordhint" id="cursor-pos">Paste X Y Z or X Z from F3 or a /tp</div>
       </form>
       <div class="readout" id="readout" hidden></div>
+      <div class="measure" id="measure" hidden>
+        <div class="chunkhead"><b>Distances</b></div>
+        <ol class="mlist" id="m-list"></ol>
+        <div class="mtotal" id="m-total"></div>
+        <div class="ckbtns"><button type="button" id="m-undo">Remove last</button><button type="button" id="m-clear">Clear</button></div>
+      </div>
       <div class="ctxmenu" id="ctxmenu" role="menu" hidden>
         <button type="button" role="menuitem" id="ctx-chunky">Use as Chunky center</button>
         <button type="button" role="menuitem" id="ctx-pin">Pin this spot</button>
         <button type="button" role="menuitem" id="ctx-area">Render only a square here</button>
         <button type="button" role="menuitem" id="ctx-area-off" hidden>Show the whole map</button>
+        <button type="button" role="menuitem" id="ctx-plot">Plot point</button>
+        <button type="button" role="menuitem" id="ctx-plot-undo" hidden>Remove last point</button>
+        <button type="button" role="menuitem" id="ctx-plot-clear" hidden>Clear points</button>
       </div>
       <form class="chunkpop areapop" id="areapop" autocomplete="off" hidden>
         <div class="chunkhead"><b>Render a square</b><button type="button" id="ap-close" aria-label="Close">&times;</button></div>

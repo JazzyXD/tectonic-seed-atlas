@@ -294,6 +294,7 @@
     if (view === "inland") drawInland();
     drawAreaMask();
     drawChunkyPreview();
+    drawPlot();
     drawPin();
     updateScaleBar();
     maybeStats();
@@ -649,6 +650,7 @@
   ck.open = false; ck.x = 0; ck.z = 0;
   const ckEl = (id) => document.getElementById(id);
   let ctxAt = null;
+  const plot = (() => { try { const v = JSON.parse(localStorage.getItem("tsa:plot")); return Array.isArray(v) ? v.filter((p) => Number.isFinite(p.x) && Number.isFinite(p.z)) : []; } catch (e) { return []; } })();
   const placeIn = (el, sx, sy) => {
     el.hidden = false;
     const w = el.offsetWidth, h = el.offsetHeight;
@@ -660,6 +662,8 @@
     const p = local(e), [wx, wz] = screenToWorld(p[0], p[1]);
     ctxAt = { sx: p[0], sy: p[1], wx: Math.floor(wx), wz: Math.floor(wz) };
     ckEl("ctx-area-off").hidden = !area.on;
+    ckEl("ctx-plot-undo").hidden = ckEl("ctx-plot-clear").hidden = plot.length === 0;
+    ckEl("ctx-plot").textContent = plot.length ? `Plot point ${plot.length + 1}` : "Plot point";
     ckEl("ctx-area").textContent = area.on ? "Move the square here" : "Render only a square here";
     placeIn(ctxMenu, p[0], p[1]);
     ckEl("ctx-chunky").focus();
@@ -971,6 +975,66 @@
   };
   document.getElementById("import-apply").onclick = () => importConfig(document.getElementById("import-text").value, "pasted text");
   showImportedPreset();
+
+  // ---------- plotted points and distances (right-click menu) ----------
+  function updateMeasure() {
+    try { localStorage.setItem("tsa:plot", JSON.stringify(plot)); } catch (e) { /* storage unavailable */ }
+    const box = ckEl("measure");
+    box.hidden = plot.length === 0;
+    const list = ckEl("m-list"); list.innerHTML = "";
+    let total = 0;
+    if (plot.length === 1) {
+      const li = document.createElement("li");
+      li.innerHTML = `<span>Point 1</span><span>${plot[0].x.toLocaleString()}, ${plot[0].z.toLocaleString()}</span>`;
+      list.appendChild(li);
+    }
+    for (let i = 1; i < plot.length; i++) {
+      const d = Math.hypot(plot[i].x - plot[i - 1].x, plot[i].z - plot[i - 1].z);
+      total += d;
+      const li = document.createElement("li");
+      li.innerHTML = `<span>${i} → ${i + 1}</span><span>${Math.round(d).toLocaleString()} blocks</span>`;
+      list.appendChild(li);
+    }
+    ckEl("m-total").innerHTML = plot.length > 2 ? `<span>Total</span><span>${Math.round(total).toLocaleString()} blocks</span>`
+      : plot.length === 1 ? `<span>Right-click another spot</span><span></span>` : "";
+    ckEl("m-total").hidden = plot.length === 2;
+    requestDraw();
+  }
+  const undoPlot = () => { plot.pop(); updateMeasure(); };
+  const clearPlot = () => { plot.length = 0; updateMeasure(); };
+  ckEl("ctx-plot").onclick = () => { hideCtx(); plot.push({ x: ctxAt.wx, z: ctxAt.wz }); updateMeasure(); };
+  ckEl("ctx-plot-undo").onclick = () => { hideCtx(); undoPlot(); };
+  ckEl("ctx-plot-clear").onclick = () => { hideCtx(); clearPlot(); };
+  ckEl("m-undo").onclick = undoPlot;
+  ckEl("m-clear").onclick = clearPlot;
+  function drawPlot() {
+    if (!plot.length) return;
+    const pts = plot.map((p) => worldToScreen(p.x + 0.5, p.z + 0.5));
+    ctx.save();
+    ctx.lineJoin = "round";
+    if (pts.length > 1) {
+      ctx.beginPath(); pts.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
+      ctx.strokeStyle = "rgba(20, 24, 28, 0.85)"; ctx.lineWidth = 5; ctx.stroke();
+      ctx.strokeStyle = "#ffffff"; ctx.lineWidth = 2.5; ctx.stroke();
+    }
+    ctx.font = '600 12px "IBM Plex Mono", ui-monospace, monospace';
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    for (let i = 1; i < pts.length; i++) {
+      const d = Math.round(Math.hypot(plot[i].x - plot[i - 1].x, plot[i].z - plot[i - 1].z)).toLocaleString();
+      const mx = (pts[i][0] + pts[i - 1][0]) / 2, my = (pts[i][1] + pts[i - 1][1]) / 2;
+      const w = ctx.measureText(d).width + 10;
+      ctx.fillStyle = "rgba(20, 24, 28, 0.85)"; ctx.fillRect(mx - w / 2, my - 9, w, 18);
+      ctx.fillStyle = "#ffffff"; ctx.fillText(d, mx, my + 0.5);
+    }
+    ctx.font = '700 11px "Barlow Semi Condensed", "Arial Narrow", sans-serif';
+    pts.forEach(([x, y], i) => {
+      ctx.beginPath(); ctx.arc(x, y, 8, 0, Math.PI * 2);
+      ctx.fillStyle = "#ffffff"; ctx.fill(); ctx.lineWidth = 2; ctx.strokeStyle = "rgba(20, 24, 28, 0.9)"; ctx.stroke();
+      ctx.fillStyle = "#14181c"; ctx.fillText(String(i + 1), x, y + 0.5);
+    });
+    ctx.restore();
+  }
+  updateMeasure();
 
   // ---------- render area popup (right-click menu) ----------
   const areaPop = document.getElementById("areapop"), apX = ckEl("ap-x"), apZ = ckEl("ap-z"), apR = ckEl("ap-r");
