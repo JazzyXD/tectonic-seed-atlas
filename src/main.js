@@ -831,8 +831,10 @@
   // land connected through anything but ocean water). Width scales exactly with 0.13 / continents_scale;
   // the table gives the width at scale 0.13 for each ocean offset. Seeds differ by about 15%.
   // Width = twice the farthest distance from the sea (how wide it is at its widest); length = longest end-to-end span.
-  const CONT_WIDTH_013 = [[-1.1, 3386], [-1.0, 3833], [-0.9, 4118], [-0.85, 4302], [-0.8, 4576], [-0.7, 4995], [-0.6, 5526], [-0.5, 6049]];
-  const CONT_LENGTH_013 = [[-1.1, 10311], [-1.0, 11556], [-0.9, 12936], [-0.85, 13579], [-0.8, 14656], [-0.7, 17986], [-0.6, 20069], [-0.5, 24002]];
+  // Calibrated on 6 seeds, 384,000-block areas at 480 blocks per sample (scale 0.13), no edge exclusion.
+  // Above ocean offset -0.6 continents start merging into supercontinents, so length is not shown there.
+  const CONT_WIDTH_013 = [[-1.1, 3880], [-1.0, 4338], [-0.9, 4652], [-0.85, 4869], [-0.8, 5095], [-0.7, 5663], [-0.6, 6335], [-0.5, 7636]];
+  const CONT_LENGTH_013 = [[-1.1, 10797], [-1.0, 13178], [-0.9, 14897], [-0.85, 16406], [-0.8, 18276], [-0.7, 23857], [-0.6, 33092]];
   function updateContSize() {
     const el = document.getElementById("cont-size");
     if (!el) return;
@@ -840,7 +842,9 @@
     if (!(cfg.continents_scale > 0) || o < T0[0][0] || o > T0[T0.length - 1][0]) { el.textContent = "Typical continent size not measured for this ocean offset"; return; }
     const at = (tab) => { for (let i = 1; i < tab.length; i++) if (o <= tab[i][0]) { const [a, wa] = tab[i - 1], [b2, wb] = tab[i]; return wa + (wb - wa) * (o - a) / (b2 - a); } return tab[tab.length - 1][1]; };
     const nice = (v) => { v *= 0.13 / cfg.continents_scale; return (v >= 10000 ? Math.round(v / 1000) * 1000 : Math.round(v / 100) * 100).toLocaleString(); };
-    el.textContent = `Typical continent \u2248 ${nice(at(T0))} blocks wide, ${nice(at(CONT_LENGTH_013))} long (varies 15 to 30% by seed)`;
+    el.textContent = o <= -0.6
+      ? `Typical continent \u2248 ${nice(at(T0))} blocks wide, ${nice(at(CONT_LENGTH_013))} long (seeds vary about 15% in width, 20 to 30% in length)`
+      : `Typical continent \u2248 ${nice(at(T0))} blocks wide; length varies too much by seed here, as continents start merging`;
   }
   function settingsChanged() {
     updateContSize();
