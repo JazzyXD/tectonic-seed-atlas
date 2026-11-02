@@ -11,7 +11,11 @@
     vegetation_scale: 0.25, vegetation_multiplier: 1, vegetation_offset: 0,
     min_y: -64, max_y: 320, underground_rivers: true, alternate_erosion_scaling: false,
   };
+  // Starting preset: Tectonic's defaults with alternate erosion scaling on (it works with C2ME's OpenCL path).
+  // DEFAULTS stays Tectonic's real defaults, used for import fallbacks and the "changed" markers.
+  const STARTER = Object.assign({}, DEFAULTS, { alternate_erosion_scaling: true });
   const MINE = Object.assign({}, DEFAULTS, {
+    alternate_erosion_scaling: true,
     continents_scale: 0.03, ocean_offset: -0.85, erosion_scale: 0.15, ridge_scale: 0.1, flat_terrain_skew: 0.2,
     elevation_boost: 0.5, ocean_depth: -0.27, deep_ocean_depth: -0.48,
     island_scale: 0.06, island_multiplier: 0.5, island_offset: 0.25,
@@ -55,7 +59,7 @@
     get(k) { try { const v = localStorage.getItem("tsa:" + k); return v == null ? null : JSON.parse(v); } catch (e) { return null; } },
     set(k, v) { try { localStorage.setItem("tsa:" + k, JSON.stringify(v)); } catch (e) { /* storage unavailable */ } },
   };
-  let cfg = Object.assign({}, DEFAULTS, store.get("cfg") || {});
+  let cfg = Object.assign({}, STARTER, store.get("cfg") || {});
   let seedText = store.get("seed") ?? "1234567890";
   let seedValue = 0n;
 
@@ -873,7 +877,7 @@
 
   // ---------- config import (config/tectonic.json) ----------
   let imported = store.get("imported");
-  function presetOf(name) { return name === "mine" ? MINE : name === "defaults" ? DEFAULTS : name === "imported" ? imported : null; }
+  function presetOf(name) { return name === "mine" ? MINE : name === "defaults" ? STARTER : name === "imported" ? imported : null; }
   function showImportedPreset() { document.querySelector('#presets [data-preset="imported"]').hidden = !imported; }
   function stripComments(text) {
     let out = "", i = 0, inStr = false;
