@@ -48,7 +48,8 @@ const TEngine = (() => {
       this.noiseCache = new Map();
       this.named = new Map();      // id -> {fn, slot}
       this.nSlots = 0;
-      this.stamp = 1;
+      this.stamp = 1;        // bumps on every new sample point or height
+      this.xzStamp = 1;      // bumps only on a new x/z column; functions that never read y stay cached across heights
       this.vals = new Float64Array(512);
       this.stamps = new Uint32Array(512);
       this.x = 0; this.y = 0; this.z = 0;
@@ -75,18 +76,55 @@ const TEngine = (() => {
       const self = this;
       e = { fn: null, call: null };
       this.named.set(id, e);
-      e.call = () => {
-        if (self.stamps[slot] === self.stamp) return self.vals[slot];
-        const v = e.fn();
-        self.vals[slot] = v; self.stamps[slot] = self.stamp;
-        return v;
-      };
-      if (id === "minecraft:overworld/base_3d_noise") { e.fn = () => 0; this.unsupported.add(id); return e.call; }
-      if (this.islandsOff && id === "tectonic:island_selector") { e.fn = () => 0; return e.call; }
-      const def = this.b.dfs[id];
+      const special = id === "minecraft:overworld/base_3d_noise" || (this.islandsOff && id === "tectonic:island_selector");
+      const def = special ? 0 : this.b.dfs[id];
       if (def === undefined) throw new Error("missing df " + id);
+      const usesY = this.dependsOnY(def);
+      e.call = usesY
+        ? () => {
+          if (self.stamps[slot] === self.stamp) return self.vals[slot];
+          const v = e.fn(); self.vals[slot] = v; self.stamps[slot] = self.stamp; return v;
+        }
+        : () => {
+          if (self.stamps[slot] === self.xzStamp) return self.vals[slot];
+          const v = e.fn(); self.vals[slot] = v; self.stamps[slot] = self.xzStamp; return v;
+        };
+      if (id === "minecraft:overworld/base_3d_noise") { e.fn = () => 0; this.unsupported.add(id); return e.call; }
+      if (special) { e.fn = () => 0; return e.call; }
       e.fn = this.compile(def);
       return e.call;
+    }
+    // True when a function's value can change with height (y). Anything else gives the same value for the
+    // whole column, so it is safe to reuse across the heights one sample looks at.
+    dependsOnY(n) {
+      if (typeof n === "number") return false;
+      if (typeof n === "string") {
+        if (!n.includes(":")) n = "minecraft:" + n;
+        if (!this.dyMemo) this.dyMemo = new Map();
+        if (this.dyMemo.has(n)) return this.dyMemo.get(n);
+        this.dyMemo.set(n, true);   // conservative while recursing
+        const special = n === "minecraft:overworld/base_3d_noise" || (this.islandsOff && n === "tectonic:island_selector");
+        const r = special ? false : this.dependsOnY(this.b.dfs[n]);
+        this.dyMemo.set(n, r);
+        return r;
+      }
+      if (Array.isArray(n)) return n.some((x) => this.dependsOnY(x));
+      if (!n || typeof n !== "object") return false;
+      const t = (n.type || "").replace("minecraft:", "");
+      if (t === "y_clamped_gradient" || t === "shift") return true;
+      if (t === "noise" && n.y_scale !== 0) return true;
+      if (t === "shifted_noise" && (n.y_scale !== 0 || this.dependsOnY(n.shift_y))) return true;
+      if (t === "spline") return this.splineDependsOnY(n.spline);
+      for (const [k, v] of Object.entries(n)) {
+        if (k === "type" || k === "noise" || k === "key") continue;
+        if (typeof v === "string" && (t === "shift_a" || t === "shift_b")) continue;   // a noise id, not a function
+        if (this.dependsOnY(v)) return true;
+      }
+      return false;
+    }
+    splineDependsOnY(sp) {
+      if (typeof sp === "number") return false;
+      return this.dependsOnY(sp.coordinate) || sp.points.some((p) => this.splineDependsOnY(p.value));
     }
     compile(n) {
       if (typeof n === "number") return () => n;
@@ -202,7 +240,7 @@ const TEngine = (() => {
     // out: object of typed arrays, i = index
     sample(x, z, out, i) {
       const e = this.e;
-      e.x = x; e.z = z; e.y = 0; e.stamp++;
+      e.x = x; e.z = z; e.y = 0; e.stamp++; e.xzStamp++;
       const offF = this.offF(), A = this.addv(), J = this.jag(), F = this.fac();
       const base = 1 + offF + A + J;
       let y = 128 * base;

@@ -177,9 +177,31 @@ const VBiomes = (() => {
   const dims = [tE.length - 1, hE.length - 1, cE.length - 1, eE.length - 1, wE.length - 1];
   const memo = new Int16Array(dims.reduce((a, b) => a * b, 1)).fill(-1);
   const mid_ = (E_, i) => Math.floor((E_[i] + E_[i + 1]) / 2);
+  const onEdge = (E_, v) => { for (let i = 0; i < E_.length; i++) if (E_[i] === v) return true; return false; };
+  const UG = [N - 3, N - 2, N - 1];   // the three underground entries, last in the list
+  function entryDist(i, t, h, c, e, d, w) {
+    const o = i * 13; let k, s = 0;
+    k = dist1(t, P[o], P[o + 1]); s += k * k; k = dist1(h, P[o + 2], P[o + 3]); s += k * k;
+    k = dist1(c, P[o + 4], P[o + 5]); s += k * k; k = dist1(e, P[o + 6], P[o + 7]); s += k * k;
+    k = dist1(d, P[o + 8], P[o + 9]); s += k * k; k = dist1(w, P[o + 10], P[o + 11]); s += k * k;
+    k = P[o + 12]; return s + k * k;
+  }
   function lookup(tf, hf, cf, ef, df, wf) {
     const t = q(tf), h = q(hf), c = q(cf), e = q(ef), d = q(df), w = q(wf);
-    if (d >= 1000) return brute(t, h, c, e, d, w);
+    if (d >= 1000) {
+      // Below the surface the underground biomes can win. Strictly inside a bucket the containing surface
+      // entry is the nearest surface entry (depth part min(d, |d-1|)^2 for its two depth copies), so only the
+      // three underground entries need checking. Points on a band edge (possible ties) use the full search.
+      const a = band(tE, t), b = band(hE, h), cc = band(cE, c), ee = band(eE, e), ww = band(wE, w);
+      if (a < 0 || b < 0 || cc < 0 || ee < 0 || ww < 0 || onEdge(tE, t) || onEdge(hE, h) || onEdge(cE, c) || onEdge(eE, e) || onEdge(wE, w)) return brute(t, h, c, e, d, w);
+      const key = (((a * dims[1] + b) * dims[2] + cc) * dims[3] + ee) * dims[4] + ww;
+      let r = memo[key];
+      if (r < 0) { r = brute(mid_(tE, a), mid_(hE, b), mid_(cE, cc), mid_(eE, ee), 0, mid_(wE, ww)); memo[key] = r; }
+      const dd = Math.min(Math.abs(d), Math.abs(d - 10000));
+      let best = dd * dd, bi = -1;
+      for (const i of UG) { const s = entryDist(i, t, h, c, e, d, w); if (s < best) { best = s; bi = i; } }
+      return bi < 0 ? r : B[bi];
+    }
     const a = band(tE, t), b = band(hE, h), cc = band(cE, c), ee = band(eE, e), ww = band(wE, w);
     if (a < 0 || b < 0 || cc < 0 || ee < 0 || ww < 0) return brute(t, h, c, e, d, w);
     const key = (((a * dims[1] + b) * dims[2] + cc) * dims[3] + ee) * dims[4] + ww;

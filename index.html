@@ -564,7 +564,8 @@ const TEngine = (() => {
       this.noiseCache = new Map();
       this.named = new Map();      // id -> {fn, slot}
       this.nSlots = 0;
-      this.stamp = 1;
+      this.stamp = 1;        // bumps on every new sample point or height
+      this.xzStamp = 1;      // bumps only on a new x/z column; functions that never read y stay cached across heights
       this.vals = new Float64Array(512);
       this.stamps = new Uint32Array(512);
       this.x = 0; this.y = 0; this.z = 0;
@@ -591,18 +592,55 @@ const TEngine = (() => {
       const self = this;
       e = { fn: null, call: null };
       this.named.set(id, e);
-      e.call = () => {
-        if (self.stamps[slot] === self.stamp) return self.vals[slot];
-        const v = e.fn();
-        self.vals[slot] = v; self.stamps[slot] = self.stamp;
-        return v;
-      };
-      if (id === "minecraft:overworld/base_3d_noise") { e.fn = () => 0; this.unsupported.add(id); return e.call; }
-      if (this.islandsOff && id === "tectonic:island_selector") { e.fn = () => 0; return e.call; }
-      const def = this.b.dfs[id];
+      const special = id === "minecraft:overworld/base_3d_noise" || (this.islandsOff && id === "tectonic:island_selector");
+      const def = special ? 0 : this.b.dfs[id];
       if (def === undefined) throw new Error("missing df " + id);
+      const usesY = this.dependsOnY(def);
+      e.call = usesY
+        ? () => {
+          if (self.stamps[slot] === self.stamp) return self.vals[slot];
+          const v = e.fn(); self.vals[slot] = v; self.stamps[slot] = self.stamp; return v;
+        }
+        : () => {
+          if (self.stamps[slot] === self.xzStamp) return self.vals[slot];
+          const v = e.fn(); self.vals[slot] = v; self.stamps[slot] = self.xzStamp; return v;
+        };
+      if (id === "minecraft:overworld/base_3d_noise") { e.fn = () => 0; this.unsupported.add(id); return e.call; }
+      if (special) { e.fn = () => 0; return e.call; }
       e.fn = this.compile(def);
       return e.call;
+    }
+    // True when a function's value can change with height (y). Anything else gives the same value for the
+    // whole column, so it is safe to reuse across the heights one sample looks at.
+    dependsOnY(n) {
+      if (typeof n === "number") return false;
+      if (typeof n === "string") {
+        if (!n.includes(":")) n = "minecraft:" + n;
+        if (!this.dyMemo) this.dyMemo = new Map();
+        if (this.dyMemo.has(n)) return this.dyMemo.get(n);
+        this.dyMemo.set(n, true);   // conservative while recursing
+        const special = n === "minecraft:overworld/base_3d_noise" || (this.islandsOff && n === "tectonic:island_selector");
+        const r = special ? false : this.dependsOnY(this.b.dfs[n]);
+        this.dyMemo.set(n, r);
+        return r;
+      }
+      if (Array.isArray(n)) return n.some((x) => this.dependsOnY(x));
+      if (!n || typeof n !== "object") return false;
+      const t = (n.type || "").replace("minecraft:", "");
+      if (t === "y_clamped_gradient" || t === "shift") return true;
+      if (t === "noise" && n.y_scale !== 0) return true;
+      if (t === "shifted_noise" && (n.y_scale !== 0 || this.dependsOnY(n.shift_y))) return true;
+      if (t === "spline") return this.splineDependsOnY(n.spline);
+      for (const [k, v] of Object.entries(n)) {
+        if (k === "type" || k === "noise" || k === "key") continue;
+        if (typeof v === "string" && (t === "shift_a" || t === "shift_b")) continue;   // a noise id, not a function
+        if (this.dependsOnY(v)) return true;
+      }
+      return false;
+    }
+    splineDependsOnY(sp) {
+      if (typeof sp === "number") return false;
+      return this.dependsOnY(sp.coordinate) || sp.points.some((p) => this.splineDependsOnY(p.value));
     }
     compile(n) {
       if (typeof n === "number") return () => n;
@@ -718,7 +756,7 @@ const TEngine = (() => {
     // out: object of typed arrays, i = index
     sample(x, z, out, i) {
       const e = this.e;
-      e.x = x; e.z = z; e.y = 0; e.stamp++;
+      e.x = x; e.z = z; e.y = 0; e.stamp++; e.xzStamp++;
       const offF = this.offF(), A = this.addv(), J = this.jag(), F = this.fac();
       const base = 1 + offF + A + J;
       let y = 128 * base;
@@ -938,9 +976,31 @@ const VBiomes = (() => {
   const dims = [tE.length - 1, hE.length - 1, cE.length - 1, eE.length - 1, wE.length - 1];
   const memo = new Int16Array(dims.reduce((a, b) => a * b, 1)).fill(-1);
   const mid_ = (E_, i) => Math.floor((E_[i] + E_[i + 1]) / 2);
+  const onEdge = (E_, v) => { for (let i = 0; i < E_.length; i++) if (E_[i] === v) return true; return false; };
+  const UG = [N - 3, N - 2, N - 1];   // the three underground entries, last in the list
+  function entryDist(i, t, h, c, e, d, w) {
+    const o = i * 13; let k, s = 0;
+    k = dist1(t, P[o], P[o + 1]); s += k * k; k = dist1(h, P[o + 2], P[o + 3]); s += k * k;
+    k = dist1(c, P[o + 4], P[o + 5]); s += k * k; k = dist1(e, P[o + 6], P[o + 7]); s += k * k;
+    k = dist1(d, P[o + 8], P[o + 9]); s += k * k; k = dist1(w, P[o + 10], P[o + 11]); s += k * k;
+    k = P[o + 12]; return s + k * k;
+  }
   function lookup(tf, hf, cf, ef, df, wf) {
     const t = q(tf), h = q(hf), c = q(cf), e = q(ef), d = q(df), w = q(wf);
-    if (d >= 1000) return brute(t, h, c, e, d, w);
+    if (d >= 1000) {
+      // Below the surface the underground biomes can win. Strictly inside a bucket the containing surface
+      // entry is the nearest surface entry (depth part min(d, |d-1|)^2 for its two depth copies), so only the
+      // three underground entries need checking. Points on a band edge (possible ties) use the full search.
+      const a = band(tE, t), b = band(hE, h), cc = band(cE, c), ee = band(eE, e), ww = band(wE, w);
+      if (a < 0 || b < 0 || cc < 0 || ee < 0 || ww < 0 || onEdge(tE, t) || onEdge(hE, h) || onEdge(cE, c) || onEdge(eE, e) || onEdge(wE, w)) return brute(t, h, c, e, d, w);
+      const key = (((a * dims[1] + b) * dims[2] + cc) * dims[3] + ee) * dims[4] + ww;
+      let r = memo[key];
+      if (r < 0) { r = brute(mid_(tE, a), mid_(hE, b), mid_(cE, cc), mid_(eE, ee), 0, mid_(wE, ww)); memo[key] = r; }
+      const dd = Math.min(Math.abs(d), Math.abs(d - 10000));
+      let best = dd * dd, bi = -1;
+      for (const i of UG) { const s = entryDist(i, t, h, c, e, d, w); if (s < best) { best = s; bi = i; } }
+      return bi < 0 ? r : B[bi];
+    }
     const a = band(tE, t), b = band(hE, h), cc = band(cE, c), ee = band(eE, e), ww = band(wE, w);
     if (a < 0 || b < 0 || cc < 0 || ee < 0 || ww < 0) return brute(t, h, c, e, d, w);
     const key = (((a * dims[1] + b) * dims[2] + cc) * dims[3] + ee) * dims[4] + ww;
