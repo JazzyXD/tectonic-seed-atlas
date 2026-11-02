@@ -33,7 +33,7 @@
       { k: "alternate_erosion_scaling", label: "Alternate erosion scaling (experimental)", toggle: true },
     ] },
     { name: "Height", open: true, fields: [
-      { k: "vertical_scale", label: "Vertical scale", note: "Stretches all terrain above and below sea level", min: 0.5, max: 2, step: 0.025 },
+      { k: "vertical_scale", label: "Vertical scale", note: "Stretches terrain above sea level. Sea floors are not affected", min: 0.5, max: 2, step: 0.025 },
       { k: "elevation_boost", label: "Elevation boost", note: "Extra stretch that grows with height", min: 0, max: 2, step: 0.05 },
     ] },
     { name: "Oceans", fields: [
