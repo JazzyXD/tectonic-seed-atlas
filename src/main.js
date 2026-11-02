@@ -830,17 +830,17 @@
   // Typical continent width, measured with this viewer (3 seeds, islands off, land-weighted width of
   // land connected through anything but ocean water). Width scales exactly with 0.13 / continents_scale;
   // the table gives the width at scale 0.13 for each ocean offset. Seeds differ by about 15%.
+  // Width = twice the farthest distance from the sea (how wide it is at its widest); length = longest end-to-end span.
   const CONT_WIDTH_013 = [[-1.1, 3386], [-1.0, 3833], [-0.9, 4118], [-0.85, 4302], [-0.8, 4576], [-0.7, 4995], [-0.6, 5526], [-0.5, 6049]];
+  const CONT_LENGTH_013 = [[-1.1, 10311], [-1.0, 11556], [-0.9, 12936], [-0.85, 13579], [-0.8, 14656], [-0.7, 17986], [-0.6, 20069], [-0.5, 24002]];
   function updateContSize() {
     const el = document.getElementById("cont-size");
     if (!el) return;
     const o = cfg.ocean_offset, T0 = CONT_WIDTH_013;
     if (!(cfg.continents_scale > 0) || o < T0[0][0] || o > T0[T0.length - 1][0]) { el.textContent = "Typical continent size not measured for this ocean offset"; return; }
-    let w = T0[T0.length - 1][1];
-    for (let i = 1; i < T0.length; i++) if (o <= T0[i][0]) { const [a, wa] = T0[i - 1], [b2, wb] = T0[i]; w = wa + (wb - wa) * (o - a) / (b2 - a); break; }
-    const blocks = w * 0.13 / cfg.continents_scale;
-    const r = blocks >= 10000 ? Math.round(blocks / 1000) * 1000 : Math.round(blocks / 100) * 100;
-    el.textContent = `Typical continent \u2248 ${r.toLocaleString()} blocks across (varies about 15% by seed)`;
+    const at = (tab) => { for (let i = 1; i < tab.length; i++) if (o <= tab[i][0]) { const [a, wa] = tab[i - 1], [b2, wb] = tab[i]; return wa + (wb - wa) * (o - a) / (b2 - a); } return tab[tab.length - 1][1]; };
+    const nice = (v) => { v *= 0.13 / cfg.continents_scale; return (v >= 10000 ? Math.round(v / 1000) * 1000 : Math.round(v / 100) * 100).toLocaleString(); };
+    el.textContent = `Typical continent \u2248 ${nice(at(T0))} blocks wide, ${nice(at(CONT_LENGTH_013))} long (varies 15 to 30% by seed)`;
   }
   function settingsChanged() {
     updateContSize();
