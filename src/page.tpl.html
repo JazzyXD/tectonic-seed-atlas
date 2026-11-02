@@ -207,7 +207,7 @@ details.group[open] > summary::after { content: "\2212"; }
         <label class="hyfield" for="hy-min">Min Y<input id="hy-min" type="number" step="16"></label>
         <label class="hyfield" for="hy-max">Max Y<input id="hy-max" type="number" step="16"></label>
       </div>
-      <div class="hint" style="color:var(--muted);font-size:12px">Multiples of 16. Terrain tops out about 18 blocks below Max Y. Min Y only affects caves.</div>
+      <div class="hint" style="color:var(--muted);font-size:12px">Multiples of 16. Terrain tops out about 10 to 15 blocks below Max Y. Min Y only affects caves.</div>
     </div>
 
     <div class="fields" style="padding-top:0">
@@ -257,7 +257,7 @@ details.group[open] > summary::after { content: "\2212"; }
     <div class="notes">
       <p><strong>Unofficial fan tool.</strong> Not made or endorsed by the Tectonic author or Mojang. Terrain data from <a href="https://modrinth.com/mod/tectonic" target="_blank" rel="noopener">Tectonic</a> 3.0.28 by Apollo (MIT). <a href="https://github.com/JazzyXD/tectonic-seed-atlas" target="_blank" rel="noopener">Source and issues on GitHub</a>.</p>
       <p><strong>What matches the game:</strong> seeding, every noise value, and Tectonic's 2D terrain and climate functions, so a seed should line up with your world.</p>
-      <p><strong>What is approximate:</strong> surface height leaves out the 3D roughness noise, caves and aquifer lakes, so heights can be off by a few blocks and some sea floors by more. Modded biomes are not supported.</p>
+      <p><strong>What is approximate:</strong> surface height follows the game's terrain shape (worked out every 8 blocks up and blended in between, like the game does) but leaves out caves and aquifer lakes. Between the 4-block columns the game also blends sideways, so a single block can be off by one. Rare floating overhangs more than 16 blocks above the ground are not shown. Modded biomes are not supported.</p>
       <p>Drag to pan, scroll or use the buttons to change scale. Click the map to pin a spot and get a teleport command.</p>
     </div>
   </aside>

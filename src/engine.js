@@ -43,15 +43,17 @@ const TEngine = (() => {
 
   class Engine {
     constructor(bundle, seed, cfg) {
-      this.b = bundle; this.cfg = cfg;
+      this.b = bundle; this.cfg = cfg; this.seed = seed;
+      this.flatEngine = null;   // evaluates flat_cache contents at y = 0 (see compileNode)
+      this.isFlat = false;
       this.positional = MCNoise.worldPositional(BigInt(seed));
       this.noiseCache = new Map();
       this.named = new Map();      // id -> {fn, slot}
       this.nSlots = 0;
       this.stamp = 1;        // bumps on every new sample point or height
       this.xzStamp = 1;      // bumps only on a new x/z column; functions that never read y stay cached across heights
-      this.vals = new Float64Array(512);
-      this.stamps = new Uint32Array(512);
+      this.vals = new Float64Array(4096);
+      this.stamps = new Uint32Array(4096);
       this.x = 0; this.y = 0; this.z = 0;
       this.unsupported = new Set();
       this.islandsOff = !cfg.islands_enabled && cfg.ocean_offset < -0.49;
@@ -76,7 +78,7 @@ const TEngine = (() => {
       const self = this;
       e = { fn: null, call: null };
       this.named.set(id, e);
-      const special = id === "minecraft:overworld/base_3d_noise" || (this.islandsOff && id === "tectonic:island_selector");
+      const special = this.islandsOff && id === "tectonic:island_selector";
       const def = special ? 0 : this.b.dfs[id];
       if (def === undefined) throw new Error("missing df " + id);
       const usesY = this.dependsOnY(def);
@@ -89,7 +91,6 @@ const TEngine = (() => {
           if (self.stamps[slot] === self.xzStamp) return self.vals[slot];
           const v = e.fn(); self.vals[slot] = v; self.stamps[slot] = self.xzStamp; return v;
         };
-      if (id === "minecraft:overworld/base_3d_noise") { e.fn = () => 0; this.unsupported.add(id); return e.call; }
       if (special) { e.fn = () => 0; return e.call; }
       e.fn = this.compile(def);
       return e.call;
@@ -103,7 +104,7 @@ const TEngine = (() => {
         if (!this.dyMemo) this.dyMemo = new Map();
         if (this.dyMemo.has(n)) return this.dyMemo.get(n);
         this.dyMemo.set(n, true);   // conservative while recursing
-        const special = n === "minecraft:overworld/base_3d_noise" || (this.islandsOff && n === "tectonic:island_selector");
+        const special = this.islandsOff && n === "tectonic:island_selector";
         const r = special ? false : this.dependsOnY(this.b.dfs[n]);
         this.dyMemo.set(n, r);
         return r;
@@ -111,7 +112,8 @@ const TEngine = (() => {
       if (Array.isArray(n)) return n.some((x) => this.dependsOnY(x));
       if (!n || typeof n !== "object") return false;
       const t = (n.type || "").replace("minecraft:", "");
-      if (t === "y_clamped_gradient" || t === "shift") return true;
+      if (t === "y_clamped_gradient" || t === "shift" || t === "old_blended_noise") return true;
+      if (t === "flat_cache" && !this.isFlat) return false;   // pinned to y = 0, see compileNode
       if (t === "noise" && n.y_scale !== 0) return true;
       if (t === "shifted_noise" && (n.y_scale !== 0 || this.dependsOnY(n.shift_y))) return true;
       if (t === "spline") return this.splineDependsOnY(n.spline);
@@ -129,6 +131,20 @@ const TEngine = (() => {
     compile(n) {
       if (typeof n === "number") return () => n;
       if (typeof n === "string") return this.ref(n);
+      const f = this.compileNode(n);
+      // A noise or spline written inline inside a height-dependent function would otherwise be recomputed at every
+      // height the column solver looks at. If it does not read y itself, keep its value for the whole column.
+      const t = n.type.replace("minecraft:", "");
+      if ((t === "noise" || t === "shifted_noise" || t === "spline" || t === "tectonic:config_noise") && !this.dependsOnY(n)) {
+        const slot = this.nSlots++, self = this;
+        return () => {
+          if (self.stamps[slot] === self.xzStamp) return self.vals[slot];
+          const v = f(); self.vals[slot] = v; self.stamps[slot] = self.xzStamp; return v;
+        };
+      }
+      return f;
+    }
+    compileNode(n) {
       const self = this;
       const t = n.type.replace("minecraft:", "");
       const C = (k) => this.compile(n[k]);
@@ -172,8 +188,28 @@ const TEngine = (() => {
           if (st.smooth) return () => nz.get((self.x + sx()) * st.scale, 0, (self.z + sz()) * st.scale) * st.mul + st.off;
           return () => nz.get(self.x * st.scale + sx(), 0, self.z * st.scale + sz()) * st.mul + st.off;
         }
+        case "old_blended_noise": {
+          // base_3d_noise. RandomState reseeds it from the world's positional random with "minecraft:terrain";
+          // it reads whole block coordinates.
+          const bn = new MCNoise.Blended(this.positional.fromHashOf("minecraft:terrain"), n.xz_scale, n.y_scale, n.xz_factor, n.y_factor, n.smear_scale_multiplier);
+          return () => bn.get(Math.floor(self.x), Math.floor(self.y), Math.floor(self.z));
+        }
         case "spline": return this.compileSpline(n.spline);
-        case "flat_cache": case "cache_2d": case "cache_once": case "cache_all_in_cell": case "interpolated": case "blend_density":
+        case "flat_cache": {
+          // In world generation flat_cache is filled once per column at y = 0. Only Tectonic's mountain ridges put
+          // height-dependent noise inside one, so those are worked out in a separate engine pinned to y = 0 and
+          // kept for the column. Everything else gives the same value at any height and passes straight through.
+          if (this.isFlat || !this.dependsOnY(n.argument)) return C("argument");
+          if (!this.flatEngine) { this.flatEngine = new Engine(this.b, this.seed, this.cfg); this.flatEngine.isFlat = true; }
+          const fe = this.flatEngine, inner = fe.compile(n.argument), slot = this.nSlots++;
+          return () => {
+            if (self.stamps[slot] === self.xzStamp) return self.vals[slot];
+            if (fe.x !== self.x || fe.z !== self.z) { fe.x = self.x; fe.z = self.z; fe.xzStamp++; }
+            fe.y = 0; fe.stamp++;
+            const v = inner(); self.vals[slot] = v; self.stamps[slot] = self.xzStamp; return v;
+          };
+        }
+        case "cache_2d": case "cache_once": case "cache_all_in_cell": case "interpolated": case "blend_density":
           return C("argument");
         case "blend_alpha": return () => 1;
         case "blend_offset": return () => 0;
@@ -235,30 +271,48 @@ const TEngine = (() => {
       this.region = e.ref("tectonic:noise/region_selector");
       this.offC = e.ref("tectonic:terrain_spline/offset/continents");
       this.isl = e.ref("tectonic:island_selector");
-      this.maxY = cfg.max_y;
+      this.maxY = cfg.max_y; this.minY = cfg.min_y;
+      this.nCells = Math.floor((cfg.max_y - cfg.min_y) / 8);
+      this.seaTop = bundle.sea_level;
+      this.seaK = Math.ceil((bundle.sea_level - cfg.min_y) / 8);   // first corner level at or above the sea surface
+      // The part of final_density the game interpolates between 8-block cell corners, with caves left out
+      // (caves only remove blocks): 0.1 + slope_lower * (-0.1 + (-1 + slope_upper * (1 + base_terrain))).
+      this.cellG = e.compile({ type: "add", argument1: 0.1, argument2: { type: "mul", argument1: "tectonic:__constants/slope_lower",
+        argument2: { type: "add", argument1: -0.1, argument2: { type: "add", argument1: -1, argument2: { type: "mul",
+          argument1: "tectonic:__constants/slope_upper", argument2: { type: "add", argument1: 1, argument2: "tectonic:base_terrain" } } } } } });
     }
+    // Value at cell corner level k (y = min_y + 8k) of the current column.
+    level(k) { const e = this.e; e.y = this.minY + 8 * k; e.stamp++; return this.cellG(); }
     // out: object of typed arrays, i = index
     sample(x, z, out, i) {
       const e = this.e;
       e.x = x; e.z = z; e.y = 0; e.stamp++; e.xzStamp++;
       const offF = this.offF(), A = this.addv(), J = this.jag(), F = this.fac();
       const base = 1 + offF + A + J;
+      // Start looking at the main shape's height; the remaining terms move the surface from there.
       let y = 128 * base;
-      e.y = y; e.stamp++;
-      // y-independent pieces stay valid but the memo was reset, so recompute what we read below at this y.
-      const B = this.rest();
-      if (F > 1e-6) y += B >= 0 ? 128 * B / F : 128 * B / (4 * F);
-      // Tectonic's top slide fades terrain out between max_y - 30 and max_y - 10 (slope_upper), so peaks are
-      // squashed there instead of reaching max_y. Solid where slope_upper(y) * (1 + density) > 1.
-      const top0 = this.maxY - 30;
-      if (y > top0) {
-        let best = top0;
-        for (let yy = Math.min(y, this.maxY - 10); yy > top0; yy -= 0.25) {
-          const tt = (yy - top0) / 20, slope = 1 - 3 * tt * tt + 2 * tt * tt * tt;
-          const v = (base - yy / 128) * F, X = 4 * (v > 0 ? v : v * 0.25) + B;
-          if (slope * (1 + X) > 1) { best = yy; break; }
+      // The game works the terrain out at every 8th block up the column and blends linearly in between, so the
+      // surface is where that blended value drops to zero: climb while the next level up is still solid, or
+      // walk down to the first solid level.
+      const nC = this.nCells;
+      let k = Math.floor((y - this.minY) / 8);
+      // Below sea level the sea-floor term can leave arches and ledges with water gaps under them, so for those
+      // columns start at sea level and work down; anything taller is found by the climb below.
+      if (y < this.seaTop) k = Math.max(k, this.seaK);
+      if (!(k >= 0)) k = 0; if (k > nC - 1) k = nC - 1;
+      let gk = this.level(k), gn = 0;
+      if (gk > 0) {
+        for (;;) {
+          if (k >= nC) { gn = -1; break; }
+          gn = this.level(k + 1);
+          if (gn > 0) { k++; gk = gn; continue; }
+          break;
         }
-        y = best;
+        y = k >= nC ? this.maxY : this.minY + 8 * k + 8 * gk / (gk - gn);
+      } else {
+        gn = gk;
+        while (k > 0) { k--; const g = this.level(k); if (g > 0) { gk = g; break; } gn = g; }
+        y = gk > 0 ? this.minY + 8 * k + 8 * gk / (gk - gn) : this.minY;
       }
       e.y = y; e.stamp++;
       out.h[i] = y;
@@ -273,7 +327,6 @@ const TEngine = (() => {
       out.rs[i] = this.region();
       out.isl[i] = this.isl();
       out.jag[i] = J;
-      out.bl[i] = 128 * base;   // surface height from the main terrain shape alone, without the sea-floor bumps
     }
   }
 

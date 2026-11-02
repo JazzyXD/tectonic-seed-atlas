@@ -20,7 +20,7 @@ Matches the game:
 - Tectonic's 2D terrain and climate functions, including its noise seeding quirk (`tectonic:parameter/*` noises are seeded as `minecraft:*`).
 
 Approximate:
-- Surface height leaves out the 3D roughness noise, caves and aquifer lakes. Land heights can be off by a few blocks, sea floors by more.
+- Surface height follows the game's terrain shape, worked out every 8 blocks up the column and blended in between like the game does. It leaves out caves and aquifer lakes, and the sideways blending between 4-block columns, so a single block can be off by one. Rare floating overhangs more than 16 blocks above the ground are not shown.
 - Vanilla biomes only. Biomes added by other mods are not shown.
 - Data matches Tectonic **3.0.28** on Minecraft **26.1**. Other versions can differ.
 

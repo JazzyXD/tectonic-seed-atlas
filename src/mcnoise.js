@@ -124,6 +124,34 @@ const MCNoise = (() => {
     }
   }
 
+  // ImprovedNoise.noise(x, y, z, yScale, yMax): the old "smeared" form, only used by BlendedNoise. Gradients use
+  // the snapped y offset, the fade curve uses the real one.
+  const F1E7 = Math.fround(1.0e-7);
+  Improved.prototype.noiseSmear = function (x0, y0, z0, yScale, yMax) {
+    const x = x0 + this.xo, y = y0 + this.yo, z = z0 + this.zo;
+    const xf = Math.floor(x), yf = Math.floor(y), zf = Math.floor(z);
+    const xr = x - xf, yr = y - yf, zr = z - zf;
+    let o = 0;
+    if (yScale !== 0) { const m = (yMax >= 0 && yMax < yr) ? yMax : yr; o = Math.floor(m / yScale + F1E7) * yScale; }
+    const wy = yr - o;
+    const p = this.p;
+    const X = xf & 255, Y = yf & 255, Z = zf & 255;
+    const a0 = p[X], a1 = p[(X + 1) & 255];
+    const b00 = p[(a0 + Y) & 255], b01 = p[(a0 + Y + 1) & 255], b10 = p[(a1 + Y) & 255], b11 = p[(a1 + Y + 1) & 255];
+    const d000 = g(p[(b00 + Z) & 255], xr, wy, zr);
+    const d100 = g(p[(b10 + Z) & 255], xr - 1, wy, zr);
+    const d010 = g(p[(b01 + Z) & 255], xr, wy - 1, zr);
+    const d110 = g(p[(b11 + Z) & 255], xr - 1, wy - 1, zr);
+    const d001 = g(p[(b00 + Z + 1) & 255], xr, wy, zr - 1);
+    const d101 = g(p[(b10 + Z + 1) & 255], xr - 1, wy, zr - 1);
+    const d011 = g(p[(b01 + Z + 1) & 255], xr, wy - 1, zr - 1);
+    const d111 = g(p[(b11 + Z + 1) & 255], xr - 1, wy - 1, zr - 1);
+    const sx = xr * xr * xr * (xr * (xr * 6 - 15) + 10);
+    const sy = yr * yr * yr * (yr * (yr * 6 - 15) + 10);
+    const sz = zr * zr * zr * (zr * (zr * 6 - 15) + 10);
+    return lerp(sz, lerp(sy, lerp(sx, d000, d100), lerp(sx, d010, d110)), lerp(sy, lerp(sx, d001, d101), lerp(sx, d011, d111)));
+  };
+
   const WRAP = 33554432;
   const wrap = (x) => x - Math.floor(x / WRAP + 0.5) * WRAP;
 
@@ -167,10 +195,42 @@ const MCNoise = (() => {
     }
   }
 
+  // BlendedNoise (old_blended_noise, used for base_3d_noise). Three legacy-initialised octave sets from one random:
+  // min limit and max limit (octaves -15..0) and main (-7..0). levels[k] holds octave k - (n - 1); index n - 1 is
+  // created first. getOctaveNoise(i) is levels[n - 1 - i].
+  function legacyLevels(r, n) { const lv = new Array(n); for (let k = n - 1; k >= 0; k--) lv[k] = new Improved(r); return lv; }
+  class Blended {
+    constructor(r, xzScale, yScale, xzFactor, yFactor, smear) {
+      this.minL = legacyLevels(r, 16); this.maxL = legacyLevels(r, 16); this.main = legacyLevels(r, 8);
+      this.xzMul = 684.412 * xzScale; this.yMul = 684.412 * yScale;
+      this.xzFactor = xzFactor; this.yFactor = yFactor; this.smear = smear;
+    }
+    get(bx, by, bz) {
+      const d = bx * this.xzMul, e = by * this.yMul, f = bz * this.xzMul;
+      const gg = d / this.xzFactor, h = e / this.yFactor, i = f / this.xzFactor;
+      const j = this.yMul * this.smear, k = j / this.yFactor;
+      let l = 0, m = 0, n = 0, o = 1;
+      for (let q = 0; q < 8; q++) {
+        n += this.main[7 - q].noiseSmear(wrap(gg * o), wrap(h * o), wrap(i * o), k * o, h * o) / o;
+        o /= 2;
+      }
+      const t = (n / 10 + 1) / 2, hi = t >= 1, lo = t <= 0;
+      o = 1;
+      for (let q = 0; q < 16; q++) {
+        const s = wrap(d * o), tt = wrap(e * o), u = wrap(f * o), v = j * o;
+        if (!hi) l += this.minL[15 - q].noiseSmear(s, tt, u, v, e * o) / o;
+        if (!lo) m += this.maxL[15 - q].noiseSmear(s, tt, u, v, e * o) / o;
+        o /= 2;
+      }
+      const a = l / 512, b = m / 512;
+      return (t < 0 ? a : t > 1 ? b : a + t * (b - a)) / 128;
+    }
+  }
+
   // World-level helper: RandomState's positional random, then one NormalNoise per id.
   function worldPositional(seed) { return Xoro.fromSeed(seed).forkPositional(); }
   function makeNoise(positional, id, firstOctave, amps) { return new Normal(positional.fromHashOf(id), firstOctave, amps); }
 
-  return { md5, seedFromHashOf, upgradeSeedTo128bit, Xoro, Positional, Improved, Perlin, Normal, worldPositional, makeNoise, toSigned };
+  return { md5, seedFromHashOf, upgradeSeedTo128bit, Xoro, Positional, Improved, Perlin, Normal, Blended, worldPositional, makeNoise, toSigned };
 })();
 if (typeof module !== "undefined") module.exports = MCNoise;
