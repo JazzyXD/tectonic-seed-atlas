@@ -928,7 +928,9 @@
     if (!obj || typeof obj !== "object") return fail("That file doesn't contain a Tectonic config.");
     const next = Object.assign({}, DEFAULTS);
     const used = [], defaulted = [], notes = [];
+    let raw = null;   // kept so an export can carry over settings the map doesn't use (caves, monuments, ...)
     if ("continents" in obj || "global_terrain" in obj || "general" in obj) {
+      raw = obj;
       for (const [k, path, type] of FIELD_MAP) {
         const v = pick(obj, path);
         if (typeof v === type) { next[k] = v; used.push(k); } else defaulted.push(path.join("."));
@@ -961,7 +963,7 @@
       return fail("No Tectonic settings found. The file should have sections like continents, global_terrain and oceans.");
     }
     if (!used.length) return fail("No Tectonic settings found in that file.");
-    imported = next; store.set("imported", imported); showImportedPreset();
+    imported = next; store.set("imported", imported); store.set("importedRaw", raw); showImportedPreset();
     cfg = Object.assign({}, imported);
     for (const [k, el] of Object.entries(inputs)) el.set(cfg[k]);
     settingsChanged();
@@ -984,6 +986,129 @@
     r.readAsText(f);
     fileEl.value = "";
   };
+  // ---------- config export (same layout Tectonic 3.0.28 writes) ----------
+  const CONFIG_TEMPLATE = {
+    biomes: { temperature_multiplier: 1.0, temperature_offset: 0.0, temperature_scale: 0.25, vegetation_multiplier: 1.0, vegetation_offset: 0.0, vegetation_scale: 0.25 },
+    caves: { carvers_enabled: true, cheese_additive: 0.27, cheese_enabled: true, depth_cutoff_size: 0.1, depth_cutoff_start: 0.1, noodle_additive: -0.075, noodle_enabled: true, ore_fix: false, spaghetti_enabled: true },
+    continents: { continents_scale: 0.13, erosion_scale: 0.25, flat_terrain_skew: 0.1, jungle_pillars: true, ocean_offset: -0.8, ridge_scale: 0.25, river_ice: false, river_lanterns: true, rolling_hills: true, underground_rivers: true },
+    experimental: { alternate_continents_scaling: false, alternate_erosion_scaling: false, improved_jungle_pillars: false },
+    general: { mod_enabled: true, snow_start_offset: 128 },
+    global_terrain: { elevation_boost: 0.0, lava_tunnels: true, max_y: 320, min_y: -64, ultrasmooth: false, vertical_scale: 1.125 },
+    islands: { enabled: true, noise_multiplier: 1.0, noise_offset: 0.0, noise_scale: 0.11 },
+    minor_version: 1,
+    oceans: { deep_ocean_depth: -0.45, monument_offset: -30, ocean_depth: -0.22, remove_frozen_ocean_ice: false },
+  };
+  // Comments Tectonic writes above its fields (copied from the 3.0.28 config file).
+  const CONFIG_COMMENTS = {
+    "caves.carvers_enabled": "Whether old caves/ravines should generate. Game restart required!",
+    "caves.cheese_additive": "Density added to cheese caves. Lower values = bigger cheese caves.",
+    "caves.cheese_enabled": "The standard expansive, large cheese-shaped caves.",
+    "caves.depth_cutoff_size": "The distance in depth between the start and end of the depth cutoff. 0.1 means caves close over ~12 blocks, 0.0 means caves cut off at the `depth_cutoff_start` value immediately.",
+    "caves.depth_cutoff_start": "The depth noise value that caves stop generating. 0.1 cuts off caves ~12 blocks below the surface, 0.5 cuts off caves ~64 blocks below the surface.",
+    "caves.noodle_additive": "Density added to noodle caves. Lower values = bigger noodle caves.",
+    "caves.noodle_enabled": "The narrow, claustrophobic noodle-shaped caves.",
+    "caves.ore_fix": "Alters ore generation to generate at more acceptable levels when min_y is lowered.",
+    "caves.spaghetti_enabled": "The tunneling, medium sized spaghetti-shaped caves.",
+    "continents.continents_scale": "Horizontally scales continents. Lower values = larger continents and oceans between them.",
+    "continents.erosion_scale": "Horizontally scales erosion, primarily impacting mountains. Lower values = thicker mountain ranges and terrain between them.",
+    "continents.flat_terrain_skew": "The threshold where plateau terrain becomes flatter terrain. Positive numbers favor flat terrain and negative numbers favor plateau terrain.",
+    "continents.jungle_pillars": "Some jungles generate massive pillars that can extend upwards of a hundred blocks tall.",
+    "continents.ocean_offset": "Skews terrain towards or away from oceans. Lower values = more oceans. Above -0.45, deep oceans will not spawn! Above -0.2, oceans will not spawn!",
+    "continents.ridge_scale": "Horizontally scales the ridge noise, primarily impacting rivers and terrain around them like plateaus. Lower values = wider rivers and terrain between them.",
+    "continents.river_ice": "Underground rivers under snowy biomes will generate with ice.",
+    "continents.river_lanterns": "Underground rivers will rarely generate with hanging lanterns.",
+    "continents.rolling_hills": "Some Plains biomes generate very smooth, hilly terrain.",
+    "continents.underground_rivers": "Rivers that reach mountain ranges continue underground, allowing smoother boat exploration.",
+    "general.mod_enabled": "When disabled, the mod lays dormant and does nothing. Game restart required!",
+    "general.snow_start_offset": "Offsets the y-level snow in cold biomes like Taigas starts at.",
+    "global_terrain.elevation_boost": "Increases the effects of Vertical Scale on mountainous terrain. This will increase the scale of mountains and plateaus faster than lowlands.",
+    "global_terrain.lava_tunnels": "Rare, deep underground tunnels of lava sometimes generate at the bottom of the world.",
+    "global_terrain.ultrasmooth": "Greatly smoothens out the terrain like Tectonic v2, removing staircasing artifacts at the cost of strange/broken generation in deep oceans and windswept biomes.",
+    "global_terrain.vertical_scale": "Vertically stretches terrain above sea level. Doubling this value will double the surface's height at a given point from sea level.",
+    "oceans.deep_ocean_depth": "0 is at sea level, -0.5 is 64 blocks below sea level.",
+    "oceans.monument_offset": "Offsets (vanilla) ocean monuments to adjust for deeper oceans.",
+    "oceans.ocean_depth": "0 is at sea level, -0.5 is 64 blocks below sea level.",
+    "oceans.remove_frozen_ocean_ice": "Removes the surface ice from Frozen Oceans, making them as navigable as Deep Frozen Oceans.",
+  };
+  const INT_KEYS = new Set(["minor_version", "snow_start_offset", "monument_offset", "min_y", "max_y"]);
+  // Map-page setting -> [section, key] in the file.
+  const EXPORT_MAP = {
+    vertical_scale: ["global_terrain", "vertical_scale"], elevation_boost: ["global_terrain", "elevation_boost"],
+    min_y: ["global_terrain", "min_y"], max_y: ["global_terrain", "max_y"],
+    ocean_offset: ["continents", "ocean_offset"], continents_scale: ["continents", "continents_scale"], erosion_scale: ["continents", "erosion_scale"],
+    ridge_scale: ["continents", "ridge_scale"], flat_terrain_skew: ["continents", "flat_terrain_skew"], underground_rivers: ["continents", "underground_rivers"],
+    rolling_hills: ["continents", "rolling_hills"], jungle_pillars: ["continents", "jungle_pillars"],
+    islands_enabled: ["islands", "enabled"], island_scale: ["islands", "noise_scale"], island_multiplier: ["islands", "noise_multiplier"], island_offset: ["islands", "noise_offset"],
+    ocean_depth: ["oceans", "ocean_depth"], deep_ocean_depth: ["oceans", "deep_ocean_depth"],
+    temperature_scale: ["biomes", "temperature_scale"], temperature_multiplier: ["biomes", "temperature_multiplier"], temperature_offset: ["biomes", "temperature_offset"],
+    vegetation_scale: ["biomes", "vegetation_scale"], vegetation_multiplier: ["biomes", "vegetation_multiplier"], vegetation_offset: ["biomes", "vegetation_offset"],
+    alternate_erosion_scaling: ["experimental", "alternate_erosion_scaling"],
+  };
+  const deepUnwrap = (v) => { v = unwrap(v); if (v && typeof v === "object" && !Array.isArray(v)) { const o = {}; for (const k of Object.keys(v)) o[k] = deepUnwrap(v[k]); return o; } return v; };
+  function buildConfig() {
+    const raw = store.get("importedRaw");
+    const base = JSON.parse(JSON.stringify(CONFIG_TEMPLATE));
+    let fromFile = false;
+    if (raw && typeof raw === "object") {
+      fromFile = true;
+      const r = deepUnwrap(raw);
+      for (const [k, v] of Object.entries(r)) {
+        if (v && typeof v === "object" && base[k] && typeof base[k] === "object") Object.assign(base[k], v); else base[k] = v;
+      }
+    }
+    if (base.global_terrain) delete base.global_terrain.increased_height;   // replaced by min_y / max_y
+    base.minor_version = 1;
+    for (const [k, [sec, key]] of Object.entries(EXPORT_MAP)) if (cfg[k] !== undefined) base[sec][key] = cfg[k];
+    return { obj: base, fromFile };
+  }
+  function numText(v, isInt) {
+    if (isInt) return String(Math.round(v));
+    let t = String(v);
+    if (/e/i.test(t)) { const [m, e] = t.split(/e/i); t = (m.includes(".") ? m : m + ".0") + "E" + parseInt(e, 10); }   // Java style, e.g. 1.0E-4
+    else if (!t.includes(".")) t += ".0";
+    return t;
+  }
+  function serializeConfig(obj) {
+    const out = [];
+    const write = (o, path, depth) => {
+      const pad = "  ".repeat(depth + 1), keys = Object.keys(o).sort();
+      keys.forEach((k, i) => {
+        const full = path ? path + "." + k : k, v = o[k], comma = i < keys.length - 1 ? "," : "";
+        if (CONFIG_COMMENTS[full]) out.push(`${pad}// ${CONFIG_COMMENTS[full]}`);
+        if (v && typeof v === "object" && !Array.isArray(v)) {
+          out.push(`${pad}${JSON.stringify(k)}: {`); write(v, full, depth + 1); out.push(`${pad}}${comma}`);
+        } else {
+          const text = typeof v === "number" ? numText(v, INT_KEYS.has(k)) : JSON.stringify(v);
+          out.push(`${pad}${JSON.stringify(k)}: ${text}${comma}`);
+        }
+      });
+    };
+    out.push("{"); write(obj, "", 0); out.push("}");
+    return out.join("\n");
+  }
+  let exportText = "";
+  function downloadExport() {
+    try {
+      const url = URL.createObjectURL(new Blob([exportText + "\n"], { type: "application/json" }));
+      const a = document.createElement("a"); a.href = url; a.download = "tectonic.json";
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 4000);
+    } catch (e) { /* some embedded viewers block downloads; the text box still works */ }
+  }
+  document.getElementById("export-btn").onclick = () => {
+    const { obj, fromFile } = buildConfig();
+    exportText = serializeConfig(obj);
+    document.getElementById("export-text").value = exportText;
+    document.getElementById("export-note").textContent = (fromFile
+      ? "Map settings from this page, plus the cave, monument and other settings from the file you imported. "
+      : "Map settings from this page. Settings the map doesn't use (caves, monuments, snow) are Tectonic's defaults. ") +
+      "Replace config/tectonic.json with this, then restart the game. Only new chunks use it. If no download started, copy the text instead.";
+    document.getElementById("export-box").hidden = false;
+    downloadExport();
+  };
+  document.getElementById("export-save").onclick = downloadExport;
+  document.getElementById("export-close").onclick = () => { document.getElementById("export-box").hidden = true; };
+  document.getElementById("export-copy").onclick = (e) => copyText(exportText, e.currentTarget, document.getElementById("export-text"));
   document.getElementById("import-apply").onclick = () => importConfig(document.getElementById("import-text").value, "pasted text");
   showImportedPreset();
 
