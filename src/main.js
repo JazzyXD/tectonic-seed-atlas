@@ -794,6 +794,19 @@
   // ---------- settings UI ----------
   const groupsEl = document.getElementById("groups");
   const inputs = {};
+  // World height boxes at the top of the panel. Tectonic needs multiples of 16, min_y at or below 0, max_y at least 256.
+  for (const [k, id, lo, hi] of [["min_y", "hy-min", -2032, 0], ["max_y", "hy-max", 256, 2032]]) {
+    const el = document.getElementById(id);
+    const set = (v) => { el.value = v; };
+    set(cfg[k]);
+    el.onchange = () => {
+      const v = parseFloat(el.value);
+      if (!Number.isFinite(v)) { set(cfg[k]); return; }
+      cfg[k] = Math.min(hi, Math.max(lo, Math.round(v / 16) * 16));
+      set(cfg[k]); settingsChanged();
+    };
+    inputs[k] = { wrap: el.closest(".hyfield"), set };
+  }
   let applyTimer = 0;
   function settingsChanged() {
     store.set("cfg", cfg);
@@ -825,8 +838,10 @@
       const num = row.querySelector('input[type="number"]'), rng = row.querySelector('input[type="range"]');
       const put = (v) => { num.value = (+v).toFixed(decimals(f.step)); rng.value = v; };
       put(cfg[f.k]);
-      rng.oninput = () => { cfg[f.k] = +(+rng.value).toFixed(6); num.value = (+rng.value).toFixed(decimals(f.step)); settingsChanged(); };
-      num.onchange = () => { const v = parseFloat(num.value); if (!Number.isFinite(v)) { put(cfg[f.k]); return; } cfg[f.k] = v; rng.value = v; settingsChanged(); };
+      // Height limits must be multiples of 16 inside their range, the same rule Tectonic enforces.
+      const fix = (v) => f.snap ? Math.min(f.max, Math.max(f.min, Math.round(v / f.snap) * f.snap)) : v;
+      rng.oninput = () => { cfg[f.k] = fix(+(+rng.value).toFixed(6)); num.value = (+cfg[f.k]).toFixed(decimals(f.step)); settingsChanged(); };
+      num.onchange = () => { const v = parseFloat(num.value); if (!Number.isFinite(v)) { put(cfg[f.k]); return; } cfg[f.k] = fix(v); put(cfg[f.k]); settingsChanged(); };
       inputs[f.k] = { wrap: row, set: put };
       box.appendChild(row);
     }

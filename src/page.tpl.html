@@ -77,6 +77,9 @@ button.primary { background: var(--accent); color: var(--accent-ink); border-col
 .ckcmd { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px; align-items: center; background: var(--bg); border: 1px solid var(--line); border-radius: 4px; padding: 5px 6px; }
 .ckcmd code { font: 500 11.5px var(--font-data); overflow-wrap: anywhere; user-select: all; }
 .ckcmd button { padding: 3px 8px; font-size: 12px; }
+.hyrow { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.hyfield { display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: var(--muted); }
+.hyfield.changed { color: var(--accent); }
 .importrow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .importrow .hint { color: var(--muted); font-size: 12px; }
 .paste summary { cursor: pointer; color: var(--muted); font-size: 12.5px; }
@@ -169,6 +172,15 @@ details.group[open] > summary::after { content: "\2212"; }
     <div class="brand">
       <h1>Tectonic Seed Atlas</h1>
       <p>Live top-down map of Tectonic 3.0.28 terrain (mod mode, Minecraft 26.1) using the game's own noise and seeding.</p>
+    </div>
+
+    <div class="fields" style="padding-top:0">
+      <span class="label">World height</span>
+      <div class="hyrow">
+        <label class="hyfield" for="hy-min">Min Y<input id="hy-min" type="number" step="16"></label>
+        <label class="hyfield" for="hy-max">Max Y<input id="hy-max" type="number" step="16"></label>
+      </div>
+      <div class="hint" style="color:var(--muted);font-size:12px">Multiples of 16. Terrain tops out about 18 blocks below Max Y. Min Y only affects caves.</div>
     </div>
 
     <div class="fields" style="padding-top:0">
