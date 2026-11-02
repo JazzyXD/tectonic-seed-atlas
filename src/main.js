@@ -99,13 +99,23 @@
   const NW = Math.max(2, Math.min(12, (navigator.hardwareConcurrency || 4) - 1));
   const workers = [];
   let gen = 0, lastError = null;
-  const tiles = new Map(), inflight = new Set();
+  // Rendered tiles for the last few configs (seed + settings), so going back to one of them redraws instantly.
+  // All configs share one memory budget (see evict), newest config last in cacheSets.
+  const CACHED_CONFIGS = 5;
+  const cacheSets = new Map();
+  let tiles = new Map();
+  const inflight = new Set();
   let queue = [], frame = 0;
 
   function fullCfg() { return Object.assign({}, FIXED, cfg); }
   function initWorkers() {
     gen++; lastError = null;
-    tiles.clear(); inflight.clear(); queue = [];
+    inflight.clear(); queue = [];
+    const c = fullCfg(), ckey = seedValue.toString() + "|" + JSON.stringify(Object.keys(c).sort().map((k) => [k, c[k]]));
+    if (cacheSets.has(ckey)) { tiles = cacheSets.get(ckey); cacheSets.delete(ckey); }
+    else tiles = new Map();
+    cacheSets.set(ckey, tiles);
+    while (cacheSets.size > CACHED_CONFIGS) cacheSets.delete(cacheSets.keys().next().value);
     for (const w of workers) w.postMessage({ type: "init", gen, seed: seedValue.toString(), cfg: fullCfg() });
     inlandDirty = true; statsDirty = true;
     schedule(); requestDraw();
@@ -142,9 +152,14 @@
     updateProgress();
   }
   function evict() {
-    if (tiles.size <= 1400) return;
-    const arr = [...tiles.values()].sort((a, b) => a.used - b.used);
-    for (let i = 0; i < arr.length - 1100; i++) tiles.delete(arr[i].key);
+    let total = 0;
+    for (const set of cacheSets.values()) total += set.size;
+    if (total <= 1400) return;
+    // Drop the least recently drawn tiles across every cached config; the current view is always the newest.
+    const all = [];
+    for (const set of cacheSets.values()) for (const t of set.values()) all.push([t.used, set, t.key]);
+    all.sort((a, b) => a[0] - b[0]);
+    for (let i = 0; i < all.length - 1100; i++) all[i][1].delete(all[i][2]);
   }
 
   // ---------- canvas ----------
