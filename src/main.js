@@ -75,7 +75,7 @@
   }
 
   // ---------- map geometry ----------
-  const STEPS = [1, 2, 4, 8, 16, 32, 64, 128, 256];
+  const STEPS = [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024];
   const CELL = 2;     // CSS pixels per sample
   const T = 64;       // samples per tile side
   const SEA_TOP = 62; // highest water block (sea level 63)
@@ -482,7 +482,7 @@
 
   // ---------- scale bar, progress ----------
   function updateScaleBar() {
-    const b = bpp(), nice = [10, 20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000, 50000, 100000];
+    const b = bpp(), nice = [10, 20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000, 50000, 100000, 200000, 500000];
     let d = nice[0];
     for (const n of nice) { if (n / b <= 150) d = n; }
     document.getElementById("scale-bar").style.width = Math.round(d / b) + "px";
