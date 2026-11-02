@@ -274,6 +274,7 @@ const TEngine = (() => {
       this.maxY = cfg.max_y; this.minY = cfg.min_y;
       this.nCells = Math.floor((cfg.max_y - cfg.min_y) / 8);
       this.seaTop = bundle.sea_level;
+      this.corners = new Map();
       this.seaK = Math.ceil((bundle.sea_level - cfg.min_y) / 8);   // first corner level at or above the sea surface
       // The part of final_density the game interpolates between 8-block cell corners, with caves left out
       // (caves only remove blocks): 0.1 + slope_lower * (-0.1 + (-1 + slope_upper * (1 + base_terrain))).
@@ -283,37 +284,101 @@ const TEngine = (() => {
     }
     // Value at cell corner level k (y = min_y + 8k) of the current column.
     level(k) { const e = this.e; e.y = this.minY + 8 * k; e.stamp++; return this.cellG(); }
+    // Point the engine at a column. Cached values stay valid while it stays on the same column.
+    column(x, z) { const e = this.e; if (e.x !== x || e.z !== z) { e.x = x; e.z = z; e.xzStamp++; } e.y = 0; e.stamp++; }
+
+    // The game works terrain out only at cell corners: every 4th block across (x and z multiples of 4) and every
+    // 8th block up, then blends linearly in between. A corner column keeps the values it has worked out.
+    corner(cx, cz) {
+      const key = cx + "," + cz;
+      let c = this.corners.get(key);
+      if (c) return c;
+      if (this.corners.size > 20000) this.corners.clear();
+      c = { x: cx, z: cz, g: new Map(), k: -1 };
+      this.corners.set(key, c);
+      this.column(cx, cz);
+      const base = 1 + this.offF() + this.addv() + this.jag();
+      const y0 = 128 * base, nC = this.nCells;
+      // Start at the main shape's height and climb while the next level up is still solid, or walk down to the
+      // first solid level. Below sea level the sea-floor term can leave arches and ledges with water under them,
+      // so those columns start at sea level and work down.
+      let k = Math.floor((y0 - this.minY) / 8);
+      if (y0 < this.seaTop) k = Math.max(k, this.seaK);
+      if (!(k >= 0)) k = 0; if (k > nC - 1) k = nC - 1;
+      const lv = (kk) => { let v = c.g.get(kk); if (v === undefined) { v = this.level(kk); c.g.set(kk, v); } return v; };
+      if (lv(k) > 0) { while (k < nC && lv(k + 1) > 0) k++; }
+      else { while (k > 0) { k--; if (lv(k) > 0) break; } if (!(lv(k) > 0)) k = -1; }
+      c.k = k;
+      return c;
+    }
+    // Make sure a corner has levels kFrom..kTo worked out (one visit to its column for any that are missing).
+    need(c, kFrom, kTo) {
+      if (kFrom < 0) kFrom = 0; if (kTo > this.nCells) kTo = this.nCells;
+      let visited = false;
+      for (let k = kFrom; k <= kTo; k++) {
+        if (c.g.has(k)) continue;
+        if (!visited) { this.column(c.x, c.z); visited = true; }
+        c.g.set(k, this.level(k));
+      }
+    }
+    // Surface height at block (x, z): the top of the blended value, using the game's interpolation order
+    // (up first, then x, then z). Returns a height whose block, Math.ceil(h) - 1, is the exact top solid block.
+    height(x, z) {
+      const x0 = Math.floor(x / 4) * 4, z0 = Math.floor(z / 4) * 4, fx = (x - x0) / 4, fz = (z - z0) / 4;
+      const cs = fx === 0 && fz === 0 ? null : [this.corner(x0, z0), this.corner(x0 + 4, z0), this.corner(x0, z0 + 4), this.corner(x0 + 4, z0 + 4)];
+      const c00 = cs ? cs[0] : this.corner(x0, z0), nC = this.nCells;
+      const lerp = (t, a, b) => a + t * (b - a);
+      let V, kLo, kHi;
+      if (!cs) { V = (k) => c00.g.get(k); kLo = kHi = c00.k; }
+      else {
+        const [a, b, c, d] = cs;
+        V = (k) => lerp(fz, lerp(fx, a.g.get(k), b.g.get(k)), lerp(fx, c.g.get(k), d.g.get(k)));
+        kLo = Math.min(a.k, b.k, c.k, d.k); kHi = Math.max(a.k, b.k, c.k, d.k);
+      }
+      const want = (lo, hi) => { if (cs) for (const c of cs) this.need(c, lo, hi); else this.need(c00, lo, hi); };
+      if (kHi < 0) return this.minY;
+      // Between the lowest and highest corner tops, find the highest level whose blended value is solid.
+      let k = Math.min(kHi + 1, nC);
+      want(Math.max(kLo, 0), k);
+      if (V(k) > 0) {
+        while (k < nC) { want(k + 1, k + 1); if (V(k + 1) > 0) k++; else break; }
+        if (k >= nC) return this.maxY;
+      } else {
+        for (;;) {
+          k--;
+          if (k < 0) return this.minY;
+          if (k < kLo) want(k, k);
+          if (V(k) > 0) break;
+        }
+      }
+      want(k + 1, k + 1);
+      const ga = cs ? cs.map((c) => c.g.get(k)) : [c00.g.get(k)], gb = cs ? cs.map((c) => c.g.get(k + 1)) : [c00.g.get(k + 1)];
+      // Exact top block inside cell k, evaluated block by block in the game's order.
+      let top = 0;
+      for (let j = 7; j >= 0; j--) {
+        const fy = j / 8;
+        const v = cs
+          ? lerp(fz, lerp(fx, lerp(fy, ga[0], gb[0]), lerp(fy, ga[1], gb[1])), lerp(fx, lerp(fy, ga[2], gb[2]), lerp(fy, ga[3], gb[3])))
+          : lerp(fy, ga[0], gb[0]);
+        if (v > 0) { top = j; break; }
+      }
+      const yb = this.minY + 8 * k + top;
+      // Smooth height for shading: the linear crossing, kept inside the exact top block.
+      const vk = V(k), vn = V(k + 1);
+      let h = this.minY + 8 * k + 8 * vk / (vk - vn);
+      // (stored as a 32-bit float, so keep clear of the block's lower edge)
+      h = Math.min(yb + 1, Math.max(yb + 0.01, h));
+      if (!(h > yb)) h = yb + 0.5;
+      return h;
+    }
     // out: object of typed arrays, i = index
     sample(x, z, out, i) {
+      x = Math.floor(x); z = Math.floor(z);
+      const y = this.height(x, z);
       const e = this.e;
-      e.x = x; e.z = z; e.y = 0; e.stamp++; e.xzStamp++;
-      const offF = this.offF(), A = this.addv(), J = this.jag(), F = this.fac();
-      const base = 1 + offF + A + J;
-      // Start looking at the main shape's height; the remaining terms move the surface from there.
-      let y = 128 * base;
-      // The game works the terrain out at every 8th block up the column and blends linearly in between, so the
-      // surface is where that blended value drops to zero: climb while the next level up is still solid, or
-      // walk down to the first solid level.
-      const nC = this.nCells;
-      let k = Math.floor((y - this.minY) / 8);
-      // Below sea level the sea-floor term can leave arches and ledges with water gaps under them, so for those
-      // columns start at sea level and work down; anything taller is found by the climb below.
-      if (y < this.seaTop) k = Math.max(k, this.seaK);
-      if (!(k >= 0)) k = 0; if (k > nC - 1) k = nC - 1;
-      let gk = this.level(k), gn = 0;
-      if (gk > 0) {
-        for (;;) {
-          if (k >= nC) { gn = -1; break; }
-          gn = this.level(k + 1);
-          if (gn > 0) { k++; gk = gn; continue; }
-          break;
-        }
-        y = k >= nC ? this.maxY : this.minY + 8 * k + 8 * gk / (gk - gn);
-      } else {
-        gn = gk;
-        while (k > 0) { k--; const g = this.level(k); if (g > 0) { gk = g; break; } gn = g; }
-        y = gk > 0 ? this.minY + 8 * k + 8 * gk / (gk - gn) : this.minY;
-      }
+      // Readout values are the router's own values at this block, as F3 shows them.
+      this.column(x, z);
+      const offF = this.offF(), J = this.jag();
       e.y = y; e.stamp++;
       out.h[i] = y;
       out.c[i] = this.cont();
