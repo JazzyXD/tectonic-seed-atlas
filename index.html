@@ -48,6 +48,12 @@ body { background: var(--bg); color: var(--fg); font-family: var(--font-body); f
 .brand p { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.4; }
 .label { font-family: var(--font-display); font-weight: 600; font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
 .seedrow { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
+.seedwrap { position: relative; min-width: 0; }
+.seedwrap input { padding-right: 38px; }
+.dice { position: absolute; right: 4px; top: 50%; transform: translateY(-50%); width: 28px; height: 28px; padding: 0; display: grid; place-items: center; color: var(--muted); background: var(--sheet); border: 1px solid var(--line); border-radius: 4px; }
+.dice:hover { color: var(--accent); border-color: var(--accent); }
+.dice.rolled svg { transform: rotate(90deg); transition: transform 0.25s; }
+@media (prefers-reduced-motion: reduce) { .dice.rolled svg { transform: none; } }
 input[type="text"], input[type="number"] {
   font: 500 13px/1.2 var(--font-data); color: var(--fg); background: var(--bg); border: 1px solid var(--line);
   border-radius: 4px; padding: 7px 8px; min-width: 0; width: 100%; box-sizing: border-box;
@@ -207,7 +213,12 @@ details.group[open] > summary::after { content: "\2212"; }
     <div class="fields" style="padding-top:0">
       <span class="label">World seed</span>
       <div class="seedrow">
-        <input id="seed" type="text" inputmode="text" autocomplete="off" spellcheck="false" aria-label="World seed">
+        <div class="seedwrap">
+          <input id="seed" type="text" inputmode="text" autocomplete="off" spellcheck="false" aria-label="World seed">
+          <button type="button" id="seed-dice" class="dice" title="Random seed" aria-label="Random seed">
+            <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="4" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="8.5" cy="8.5" r="1.6" fill="currentColor"/><circle cx="15.5" cy="8.5" r="1.6" fill="currentColor"/><circle cx="12" cy="12" r="1.6" fill="currentColor"/><circle cx="8.5" cy="15.5" r="1.6" fill="currentColor"/><circle cx="15.5" cy="15.5" r="1.6" fill="currentColor"/></svg>
+          </button>
+        </div>
         <button id="seed-apply" class="primary" type="button">Load</button>
       </div>
       <div class="hint" style="color:var(--muted);font-size:12px">Type the number from /seed. Text seeds work the same way the game hashes them.</div>
@@ -2234,6 +2245,12 @@ onmessage = (ev) => {
     initWorkers();
   }
   document.getElementById("seed-apply").onclick = applySeed;
+  document.getElementById("seed-dice").onclick = (e) => {
+    const b = e.currentTarget;
+    seedEl.value = randomSeed().toString();
+    b.classList.remove("rolled"); void b.offsetWidth; b.classList.add("rolled");
+    applySeed();
+  };
   seedEl.addEventListener("keydown", (e) => { if (e.key === "Enter") applySeed(); });
 
   // ---------- start ----------

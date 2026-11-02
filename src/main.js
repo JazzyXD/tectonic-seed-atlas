@@ -1241,6 +1241,12 @@
     initWorkers();
   }
   document.getElementById("seed-apply").onclick = applySeed;
+  document.getElementById("seed-dice").onclick = (e) => {
+    const b = e.currentTarget;
+    seedEl.value = randomSeed().toString();
+    b.classList.remove("rolled"); void b.offsetWidth; b.classList.add("rolled");
+    applySeed();
+  };
   seedEl.addEventListener("keydown", (e) => { if (e.key === "Enter") applySeed(); });
 
   // ---------- start ----------
