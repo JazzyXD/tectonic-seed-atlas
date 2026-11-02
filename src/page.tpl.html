@@ -1,0 +1,286 @@
+<title>Tectonic Seed Atlas</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: survey-instrument split. Settings rail on the left, map sheet fills the rest; stacks on phones. */
+:root {
+  --bg: #e9eeec;
+  --sheet: #f7f9f8;
+  --fg: #1b2321;
+  --muted: #5a6864;
+  --line: #ccd6d2;
+  --accent: #94631c;
+  --accent-ink: #ffffff;
+  --track: #d7dfdc;
+  --map-bg: #dfe6e3;
+  --warn: #a2461f;
+  --font-display: "Barlow Semi Condensed", "Arial Narrow", "Roboto Condensed", sans-serif;
+  --font-body: "Barlow", "Segoe UI", system-ui, sans-serif;
+  --font-data: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #101514; --sheet: #161d1b; --fg: #e2eae7; --muted: #92a29d; --line: #2a3532;
+    --accent: #d9a14a; --accent-ink: #1a1305; --track: #26302d; --map-bg: #0c1110; --warn: #e07a4f;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #101514; --sheet: #161d1b; --fg: #e2eae7; --muted: #92a29d; --line: #2a3532;
+  --accent: #d9a14a; --accent-ink: #1a1305; --track: #26302d; --map-bg: #0c1110; --warn: #e07a4f;
+  color-scheme: dark;
+}
+html, body { height: 100%; }
+body { background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: 14px; }
+.app {
+  height: 100%; display: grid; grid-template-columns: 330px minmax(0, 1fr);
+  padding-left: max(0px, env(safe-area-inset-left, 0px)); padding-right: max(0px, env(safe-area-inset-right, 0px));
+}
+.rail {
+  background: var(--sheet); border-right: 1px solid var(--line); overflow-y: auto; min-width: 0;
+  padding-block: 18px 28px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: 16px;
+  display: flex; flex-direction: column; gap: 16px;
+}
+.brand { display: flex; flex-direction: column; gap: 2px; }
+.brand h1 { margin: 0; font-family: var(--font-display); font-weight: 700; font-size: 22px; letter-spacing: 0.01em; text-wrap: balance; }
+.brand p { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.4; }
+.label { font-family: var(--font-display); font-weight: 600; font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.seedrow { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
+input[type="text"], input[type="number"] {
+  font: 500 13px/1.2 var(--font-data); color: var(--fg); background: var(--bg); border: 1px solid var(--line);
+  border-radius: 4px; padding: 7px 8px; min-width: 0; width: 100%; box-sizing: border-box;
+}
+input:focus-visible, button:focus-visible, select:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+button {
+  font: 600 13px var(--font-display); letter-spacing: 0.03em; color: var(--fg); background: var(--bg);
+  border: 1px solid var(--line); border-radius: 4px; padding: 6px 10px; cursor: pointer;
+}
+button:hover { border-color: var(--muted); }
+button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.presets { display: flex; gap: 6px; flex-wrap: wrap; }
+.presets button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.ctxmenu { position: absolute; z-index: 5; background: var(--sheet); border: 1px solid var(--line); border-radius: 4px; padding: 4px; display: flex; flex-direction: column; box-shadow: 0 4px 16px rgb(0 0 0 / 0.18); }
+.ctxmenu button { border: 0; background: none; text-align: left; padding: 7px 10px; font: 600 13px var(--font-display); }
+.ctxmenu button:hover, .ctxmenu button:focus-visible { background: var(--bg); }
+.chunkpop { position: absolute; z-index: 5; width: 300px; max-width: calc(100% - 24px); background: var(--sheet); border: 1px solid var(--line); border-radius: 4px; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; box-shadow: 0 6px 22px rgb(0 0 0 / 0.2); font-size: 12.5px; }
+.chunkhead { cursor: grab; touch-action: none; user-select: none; margin: -10px -12px 0; padding: 10px 12px 4px; display: flex; justify-content: space-between; align-items: center; font-family: var(--font-display); font-size: 15px; }
+.chunkhead.dragging { cursor: grabbing; }
+.chunkhead button { border: 0; background: none; font-size: 20px; line-height: 1; padding: 0 4px; }
+.ckgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 8px; }
+.ckgrid label { display: flex; flex-direction: column; gap: 3px; color: var(--muted); font-size: 11.5px; }
+.ckgrid select { font: 500 13px var(--font-body); color: var(--fg); background: var(--bg); border: 1px solid var(--line); border-radius: 4px; padding: 6px; }
+.ckbtns { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.ckest { font: 500 12px var(--font-data); font-variant-numeric: tabular-nums; }
+.ckcmds { display: flex; flex-direction: column; gap: 5px; }
+.ckcmd { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px; align-items: center; background: var(--bg); border: 1px solid var(--line); border-radius: 4px; padding: 5px 6px; }
+.ckcmd code { font: 500 11.5px var(--font-data); overflow-wrap: anywhere; user-select: all; }
+.ckcmd button { padding: 3px 8px; font-size: 12px; }
+.importrow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.importrow .hint { color: var(--muted); font-size: 12px; }
+.paste summary { cursor: pointer; color: var(--muted); font-size: 12.5px; }
+.paste { display: flex; flex-direction: column; gap: 6px; }
+.paste[open] > summary { margin-bottom: 6px; }
+.paste textarea { width: 100%; box-sizing: border-box; font: 12px/1.4 var(--font-data); color: var(--fg); background: var(--bg); border: 1px solid var(--line); border-radius: 4px; padding: 6px 8px; resize: vertical; margin-bottom: 6px; }
+.importmsg { font-size: 12.5px; line-height: 1.45; border-left: 3px solid var(--accent); padding: 4px 0 4px 10px; }
+.importmsg.bad { border-left-color: var(--warn); color: var(--warn); }
+.importmsg ul { margin: 4px 0 0; padding-left: 18px; color: var(--muted); }
+details.group { border-top: 1px solid var(--line); padding-top: 10px; }
+details.group > summary { cursor: pointer; list-style: none; display: flex; justify-content: space-between; align-items: center; font-family: var(--font-display); font-weight: 700; font-size: 15px; }
+details.group > summary::after { content: "+"; color: var(--muted); font-weight: 500; }
+details.group[open] > summary::after { content: "\2212"; }
+.fields { display: flex; flex-direction: column; gap: 12px; padding-top: 10px; }
+.field { display: grid; grid-template-columns: minmax(0, 1fr) 74px; gap: 4px 10px; align-items: center; }
+.field label { font-size: 13px; }
+.field label small { display: block; color: var(--muted); font-size: 11.5px; line-height: 1.3; }
+.field input[type="range"] { grid-column: 1 / -1; width: 100%; accent-color: var(--accent); margin: 0; }
+.field.changed label::before { content: ""; display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); margin-right: 6px; vertical-align: 2px; }
+.toggle { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.toggle input { accent-color: var(--accent); width: 16px; height: 16px; margin: 0; }
+.notes { color: var(--muted); font-size: 12px; line-height: 1.5; border-top: 1px solid var(--line); padding-top: 12px; }
+.notes p { margin: 0 0 6px; }
+.notes a { color: var(--accent); }
+
+.stage { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; min-width: 0; min-height: 0; }
+.toolbar {
+  display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; justify-content: space-between;
+  padding-block: 10px; padding-left: 16px; padding-right: max(16px, env(safe-area-inset-right, 0px));
+  border-bottom: 1px solid var(--line); background: var(--sheet);
+}
+.views { display: flex; flex-wrap: wrap; gap: 4px; }
+.views button { padding: 5px 9px; font-size: 12.5px; }
+.views button[aria-pressed="true"] { background: var(--fg); color: var(--sheet); border-color: var(--fg); }
+.scalectl { display: flex; align-items: center; gap: 8px; }
+.scalectl button { width: 30px; padding: 4px 0; font-size: 16px; }
+.scalebar { display: flex; flex-direction: column; gap: 2px; font: 500 11px var(--font-data); color: var(--muted); min-width: 90px; }
+.scalebar i { display: block; height: 6px; border: 1.5px solid var(--fg); border-top: 0; }
+.mapwrap { position: relative; background: var(--map-bg); overflow: hidden; touch-action: none; min-height: 0; }
+#map { position: absolute; inset: 0; width: 100%; height: 100%; cursor: grab; image-rendering: pixelated; }
+#map.dragging { cursor: grabbing; }
+.progress { position: absolute; left: 12px; top: 12px; font: 500 11.5px var(--font-data); background: var(--sheet); color: var(--fg); border: 1px solid var(--line); border-radius: 3px; padding: 3px 7px; }
+.readout {
+  position: absolute; right: max(12px, env(safe-area-inset-right, 0px)); top: 12px; width: 236px; max-width: calc(100% - 24px);
+  background: var(--sheet); border: 1px solid var(--line); border-radius: 4px; padding: 10px 12px;
+  font-size: 12.5px; display: flex; flex-direction: column; gap: 6px; box-shadow: 0 2px 10px rgb(0 0 0 / 0.12);
+}
+.readout .biome { font-family: var(--font-display); font-weight: 700; font-size: 16px; }
+.readout dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; font-variant-numeric: tabular-nums; }
+.readout dt { color: var(--muted); }
+.readout dd { margin: 0; font-family: var(--font-data); font-size: 12px; text-align: right; }
+.readout .tp { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px; align-items: center; }
+.readout code { font: 500 11.5px var(--font-data); overflow-wrap: anywhere; user-select: all; }
+.readout .hint { color: var(--muted); font-size: 11.5px; }
+.footer {
+  display: flex; flex-wrap: wrap; gap: 10px 22px; align-items: flex-start;
+  padding-block: 10px 12px; padding-left: 16px; padding-right: max(16px, env(safe-area-inset-right, 0px));
+  border-top: 1px solid var(--line); background: var(--sheet); min-height: 64px;
+}
+.stat { display: flex; flex-direction: column; gap: 2px; }
+.stat b { font: 600 18px var(--font-display); font-variant-numeric: tabular-nums; }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 12px; flex: 1 1 320px; min-width: 0; align-content: flex-start; }
+.legend span { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; white-space: nowrap; }
+.legend i { width: 11px; height: 11px; border-radius: 2px; display: inline-block; box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.18); }
+.legend .t { color: var(--muted); }
+.legend span.t { white-space: normal; flex: 1 1 100%; }
+.coordbox {
+  position: absolute; left: max(12px, env(safe-area-inset-left, 0px)); bottom: 12px; z-index: 2;
+  background: var(--sheet); border: 1px solid var(--line); border-radius: 4px; padding: 8px;
+  display: flex; flex-direction: column; gap: 5px; box-shadow: 0 2px 10px rgb(0 0 0 / 0.12); max-width: calc(100% - 24px);
+}
+.coordrow { display: grid; grid-template-columns: 82px 82px auto; gap: 6px; }
+.coordrow input { padding: 6px 7px; }
+.coordhint { font: 500 11px var(--font-data); color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 240px; }
+.coordbox.bad input { border-color: var(--warn); }
+.err { color: var(--warn); font-size: 12.5px; }
+
+@media (max-width: 820px) {
+  .app { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto; height: auto; padding-left: 0; padding-right: 0; }
+  .stage { order: -1; grid-template-rows: auto 62vh auto; }
+  .rail { border-right: 0; border-top: 1px solid var(--line); overflow: visible; padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+  .readout { width: 200px; font-size: 12px; }
+  html, body { height: auto; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="app">
+  <aside class="rail" aria-label="World settings">
+    <div class="brand">
+      <h1>Tectonic Seed Atlas</h1>
+      <p>Live top-down map of Tectonic 3.0.28 terrain (mod mode, Minecraft 26.1) using the game's own noise and seeding.</p>
+    </div>
+
+    <div class="fields" style="padding-top:0">
+      <span class="label">World seed</span>
+      <div class="seedrow">
+        <input id="seed" type="text" inputmode="text" autocomplete="off" spellcheck="false" aria-label="World seed">
+        <button id="seed-apply" class="primary" type="button">Load</button>
+      </div>
+      <div class="hint" style="color:var(--muted);font-size:12px">Type the number from /seed. Text seeds work the same way the game hashes them.</div>
+      <div id="seed-err" class="err" hidden></div>
+    </div>
+
+    <div class="fields" style="padding-top:0">
+      <span class="label">Preset</span>
+      <div class="presets" id="presets">
+        <button type="button" data-preset="defaults" aria-pressed="true">Tectonic defaults</button>
+        <button type="button" data-preset="mine" aria-pressed="false" title="Larger continents, more ocean, taller mountains">Example config</button>
+        <button type="button" data-preset="imported" aria-pressed="false" hidden>Imported file</button>
+      </div>
+      <div class="importrow">
+        <button type="button" id="import-btn">Import tectonic.json</button>
+        <input type="file" id="import-file" accept=".json,.json5,.txt,application/json" hidden>
+        <span class="hint">from your instance's config folder</span>
+      </div>
+      <details class="paste">
+        <summary>Or paste the file's text</summary>
+        <textarea id="import-text" rows="6" spellcheck="false" aria-label="Config text"></textarea>
+        <button type="button" id="import-apply">Apply pasted config</button>
+      </details>
+      <div id="import-msg" class="importmsg" hidden></div>
+    </div>
+
+    <div id="groups"></div>
+
+    <div class="notes">
+      <p><strong>Unofficial fan tool.</strong> Not made or endorsed by the Tectonic author or Mojang. Terrain data from <a href="https://modrinth.com/mod/tectonic" target="_blank" rel="noopener">Tectonic</a> 3.0.28 by Apollo (MIT). <a href="https://github.com/JazzyXD/tectonic-seed-atlas" target="_blank" rel="noopener">Source and issues on GitHub</a>.</p>
+      <p><strong>What matches the game:</strong> seeding, every noise value, and Tectonic's 2D terrain and climate functions, so a seed should line up with your world.</p>
+      <p><strong>What is approximate:</strong> surface height leaves out the 3D roughness noise, caves and aquifer lakes, so heights can be off by a few blocks and some sea floors by more. Biomes are vanilla only. Wilder Wild, Terrestria and Biolith biomes are not shown.</p>
+      <p>Drag to pan, scroll or use the buttons to change scale. Click the map to pin a spot and get a teleport command.</p>
+    </div>
+  </aside>
+
+  <main class="stage">
+    <div class="toolbar">
+      <div class="views" id="views" role="group" aria-label="Map layer"></div>
+      <div class="scalectl">
+        <button id="scale-out" type="button" aria-label="Show more area">&minus;</button>
+        <div class="scalebar"><span id="scale-text">1,000 blocks</span><i id="scale-bar"></i></div>
+        <button id="scale-in" type="button" aria-label="Show more detail">+</button>
+      </div>
+    </div>
+    <div class="mapwrap" id="mapwrap">
+      <canvas id="map" aria-label="World map"></canvas>
+      <div class="progress" id="progress">Starting workers</div>
+      <form class="coordbox" id="coordbox" autocomplete="off">
+        <div class="coordrow">
+          <input id="go-x" type="text" inputmode="text" placeholder="X" aria-label="X coordinate" spellcheck="false">
+          <input id="go-z" type="text" inputmode="text" placeholder="Z" aria-label="Z coordinate" spellcheck="false">
+          <button id="go" type="submit">Go</button>
+        </div>
+        <div class="coordhint" id="cursor-pos">Paste X Y Z or X Z from F3 or a /tp</div>
+      </form>
+      <div class="readout" id="readout" hidden></div>
+      <div class="ctxmenu" id="ctxmenu" role="menu" hidden>
+        <button type="button" role="menuitem" id="ctx-chunky">Use as Chunky center</button>
+        <button type="button" role="menuitem" id="ctx-pin">Pin this spot</button>
+        <button type="button" role="menuitem" id="ctx-area">Render only a square here</button>
+        <button type="button" role="menuitem" id="ctx-area-off" hidden>Show the whole map</button>
+      </div>
+      <form class="chunkpop areapop" id="areapop" autocomplete="off" hidden>
+        <div class="chunkhead"><b>Render a square</b><button type="button" id="ap-close" aria-label="Close">&times;</button></div>
+        <div class="ckgrid">
+          <label for="ap-x">Center X<input id="ap-x" type="number" step="any"></label>
+          <label for="ap-z">Center Z<input id="ap-z" type="number" step="any"></label>
+          <label for="ap-r">Square radius<input id="ap-r" type="number" step="any"></label>
+          <label>Size<span class="ckest" id="ap-size"></span></label>
+        </div>
+        <div class="ckbtns"><button type="submit" class="primary">Render square</button><button type="button" id="ap-off">Show whole map</button></div>
+      </form>
+      <form class="chunkpop" id="chunkpop" autocomplete="off" hidden>
+        <div class="chunkhead"><b>Chunky pregeneration</b><button type="button" id="ck-close" aria-label="Close">&times;</button></div>
+        <div class="ckgrid">
+          <label for="ck-x">Center X<input id="ck-x" type="number" step="any"></label>
+          <label for="ck-z">Center Z<input id="ck-z" type="number" step="any"></label>
+          <label for="ck-shape">Shape<select id="ck-shape">
+            <option value="square">Square</option><option value="circle">Circle</option><option value="rectangle">Rectangle</option>
+            <option value="ellipse">Ellipse</option><option value="diamond">Diamond</option><option value="hexagon">Hexagon</option>
+            <option value="pentagon">Pentagon</option><option value="triangle">Triangle</option><option value="star">Star</option>
+          </select></label>
+          <label for="ck-r" id="ck-r-label">Radius<input id="ck-r" type="number" step="any" min="0"></label>
+          <label for="ck-rz" id="ck-rz-wrap" hidden>Radius Z<input id="ck-rz" type="number" step="any" min="0"></label>
+          <label for="ck-cps">Your speed (chunks/s)<input id="ck-cps" type="number" step="any" min="0.1"></label>
+        </div>
+        <div class="ckest" id="ck-est"></div>
+        <div class="ckcmds" id="ck-cmds"></div>
+        <button type="button" id="ck-fit">Show whole area</button>
+      </form>
+    </div>
+    <div class="footer">
+      <div class="stat"><span class="label" id="st-land-label">Land in view</span><b id="st-land">&ndash;</b></div>
+      <div class="stat"><span class="label" id="st-mid-label">Highest point</span><b id="st-mid">&ndash;</b></div>
+      <div class="legend" id="legend"></div>
+    </div>
+  </main>
+</div>
+
+<script id="lib">
+/*LIB*/
+</script>
+<script id="worker-src" type="text/plain">
+/*WORKER*/
+</script>
+<script>
+/*MAIN*/
+</script>
