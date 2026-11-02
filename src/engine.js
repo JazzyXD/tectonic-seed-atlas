@@ -235,6 +235,7 @@ const TEngine = (() => {
       out.rs[i] = this.region();
       out.isl[i] = this.isl();
       out.jag[i] = J;
+      out.bl[i] = 128 * base;   // surface height from the main terrain shape alone, without the sea-floor bumps
     }
   }
 

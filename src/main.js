@@ -540,7 +540,9 @@
     const reg = water ? "–" : REGIONS[(D.re[k] < 0 ? 0 : 2) + (D.rs[k] < 0 ? 0 : 1)][1];
     // Island = land made by Tectonic's island noise (only inside the deep-ocean island zone); shown on land only.
     const islandZone = D.isl[k] > 0.5;
-    const landform = water ? "" : islandZone ? "Island" : "Continent";
+    // Land that only exists because of Tectonic's sea-floor bumps is an islet; its biome is the ocean around it.
+    const fromBumps = !water && landTop(D.bl[k]) < SEA_TOP;
+    const landform = water ? "" : fromBumps ? "Islet (sea-floor bump, keeps the ocean biome)" : islandZone ? "Island" : "Continent";
     readout.innerHTML =
       `<div class="biome">${pretty(VBiomes.names[s.t.bio[k]])}</div>` +
       `<dl>${landform ? `<dt>Land type</dt><dd>${landform}</dd>` : ""}<dt>X, Z</dt><dd>${X.toLocaleString()}, ${Z.toLocaleString()}</dd>` +

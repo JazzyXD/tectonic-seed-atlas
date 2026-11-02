@@ -751,6 +751,7 @@ const TEngine = (() => {
       out.rs[i] = this.region();
       out.isl[i] = this.isl();
       out.jag[i] = J;
+      out.bl[i] = 128 * base;   // surface height from the main terrain shape alone, without the sea-floor bumps
     }
   }
 
@@ -972,7 +973,7 @@ const BUNDLE = {"router":{"barrier":"minecraft:overworld/noise_router/barrier","
 <script id="worker-src" type="text/plain">
 // Map worker: builds a Sampler for the current seed and settings, then fills tiles on request.
 let sampler = null, gen = -1;
-const KEYS = ["h", "c", "e", "w", "t", "v", "d", "raw", "re", "rs", "isl", "jag"];
+const KEYS = ["h", "c", "e", "w", "t", "v", "d", "raw", "re", "rs", "isl", "jag", "bl"];
 onmessage = (ev) => {
   const m = ev.data;
   if (m.type === "init") {
@@ -1544,7 +1545,9 @@ onmessage = (ev) => {
     const reg = water ? "–" : REGIONS[(D.re[k] < 0 ? 0 : 2) + (D.rs[k] < 0 ? 0 : 1)][1];
     // Island = land made by Tectonic's island noise (only inside the deep-ocean island zone); shown on land only.
     const islandZone = D.isl[k] > 0.5;
-    const landform = water ? "" : islandZone ? "Island" : "Continent";
+    // Land that only exists because of Tectonic's sea-floor bumps is an islet; its biome is the ocean around it.
+    const fromBumps = !water && landTop(D.bl[k]) < SEA_TOP;
+    const landform = water ? "" : fromBumps ? "Islet (sea-floor bump, keeps the ocean biome)" : islandZone ? "Island" : "Continent";
     readout.innerHTML =
       `<div class="biome">${pretty(VBiomes.names[s.t.bio[k]])}</div>` +
       `<dl>${landform ? `<dt>Land type</dt><dd>${landform}</dd>` : ""}<dt>X, Z</dt><dd>${X.toLocaleString()}, ${Z.toLocaleString()}</dd>` +

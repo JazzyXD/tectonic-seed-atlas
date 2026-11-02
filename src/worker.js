@@ -1,6 +1,6 @@
 // Map worker: builds a Sampler for the current seed and settings, then fills tiles on request.
 let sampler = null, gen = -1;
-const KEYS = ["h", "c", "e", "w", "t", "v", "d", "raw", "re", "rs", "isl", "jag"];
+const KEYS = ["h", "c", "e", "w", "t", "v", "d", "raw", "re", "rs", "isl", "jag", "bl"];
 onmessage = (ev) => {
   const m = ev.data;
   if (m.type === "init") {
