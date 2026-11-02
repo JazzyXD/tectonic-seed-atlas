@@ -119,6 +119,8 @@
     for (const w of workers) w.postMessage({ type: "init", gen, seed: seedValue.toString(), cfg: fullCfg() });
     inlandDirty = true; statsDirty = true;
     schedule(); requestDraw();
+    // Refresh the pinned spot for the new settings; it fills in again as tiles arrive if they aren't cached.
+    if (pin) { pinState = "none"; showReadout(pin.wx, pin.wz, true); }
   }
   for (let i = 0; i < NW; i++) {
     const w = new Worker(blobURL);
