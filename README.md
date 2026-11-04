@@ -21,6 +21,7 @@ Matches the game:
 
 Approximate:
 - Surface height follows the game's terrain shape, worked out at the same points as the game (every 4 blocks across, every 8 blocks up) and blended between them in the game's order. It leaves out caves and aquifer lakes. Rare floating overhangs more than 8 blocks above the ground are not shown.
+- Experimental continents (off by default, bottom of the settings) are not in the game yet. Cells decide where continents go and how they are shaped, and Tectonic still makes the terrain, coasts and biomes from that.
 - Vanilla biomes only. Biomes added by other mods are not shown.
 - Data matches Tectonic **3.0.28** on Minecraft **26.1**. Other versions can differ.
 

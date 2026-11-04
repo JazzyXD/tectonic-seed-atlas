@@ -55,11 +55,24 @@
       { k: "vegetation_offset", label: "Vegetation offset", min: -1, max: 1, step: 0.05 },
     ] },
   ];
+  // Experimental continents: kept apart from the Tectonic settings, so presets, import and export never touch them.
+  const EXP_DEFAULTS = { exp_continents: false, exp_land: 0.4, exp_join: 0.5, exp_warp: 1.2, exp_detail: 1, exp_gap: 0.15 };
+  GROUPS.push({ name: "Experimental continents", exp: true,
+    note: "Not in the game yet. Cells decide where continents go and how they are shaped; Tectonic still makes the terrain, coasts and biomes. Continents scale still sets the size and ocean offset still sets how much is ocean.",
+    fields: [
+      { k: "exp_continents", label: "Use experimental continents", toggle: true },
+      { k: "exp_land", label: "Land share", note: "Share of cells that become land", min: 0.05, max: 0.95, step: 0.01 },
+      { k: "exp_join", label: "Merge chance", note: "How often neighbouring continents join into one", min: 0, max: 1, step: 0.05 },
+      { k: "exp_warp", label: "Shape wildness", note: "Bends outlines into arms, bays and necks", min: 0, max: 2, step: 0.05 },
+      { k: "exp_detail", label: "Coastline detail", note: "Strength of Tectonic's own small-scale coast noise", min: 0, max: 2, step: 0.05 },
+      { k: "exp_gap", label: "Ocean gap", note: "Width of the sea between continents that don't merge", min: 0, max: 0.4, step: 0.01 },
+    ] });
   const store = {
     get(k) { try { const v = localStorage.getItem("tsa:" + k); return v == null ? null : JSON.parse(v); } catch (e) { return null; } },
     set(k, v) { try { localStorage.setItem("tsa:" + k, JSON.stringify(v)); } catch (e) { /* storage unavailable */ } },
   };
   let cfg = Object.assign({}, STARTER, store.get("cfg") || {});
+  const exp = Object.assign({}, EXP_DEFAULTS, store.get("exp") || {});
   let seedText = store.get("seed") ?? "1234567890";
   let seedValue = 0n;
 
@@ -107,7 +120,7 @@
   const inflight = new Set();
   let queue = [], frame = 0;
 
-  function fullCfg() { return Object.assign({}, FIXED, cfg); }
+  function fullCfg() { return Object.assign({}, FIXED, cfg, exp.exp_continents ? exp : {}); }
   function initWorkers() {
     gen++; lastError = null;
     inflight.clear(); queue = [];
@@ -841,7 +854,7 @@
       cfg[k] = Math.min(hi, Math.max(lo, Math.round(v / 16) * 16));
       set(cfg[k]); settingsChanged();
     };
-    inputs[k] = { wrap: el.closest(".hyfield"), set };
+    inputs[k] = { wrap: el.closest(".hyfield"), set, src: () => cfg, def: DEFAULTS };
   }
   let applyTimer = 0;
   // Typical continent width, measured with this viewer (3 seeds, islands off, land-weighted width of
@@ -855,6 +868,11 @@
   function updateContSize() {
     const el = document.getElementById("cont-size");
     if (!el) return;
+    if (exp.exp_continents) {
+      const gapBlocks = cfg.continents_scale > 0 ? 1100 / cfg.continents_scale : 0;
+      el.textContent = gapBlocks ? `Experimental: continent cells are about ${(gapBlocks >= 10000 ? Math.round(gapBlocks / 1000) * 1000 : Math.round(gapBlocks / 100) * 100).toLocaleString()} blocks apart` : "";
+      return;
+    }
     const o = cfg.ocean_offset, T0 = CONT_WIDTH_013;
     if (!(cfg.continents_scale > 0) || o < T0[0][0] || o > T0[T0.length - 1][0]) { el.textContent = "Typical continent size not measured for this ocean offset"; return; }
     const at = (tab) => { for (let i = 1; i < tab.length; i++) if (o <= tab[i][0]) { const [a, wa] = tab[i - 1], [b2, wb] = tab[i]; return wa + (wb - wa) * (o - a) / (b2 - a); } return tab[tab.length - 1][1]; };
@@ -866,7 +884,8 @@
   function settingsChanged() {
     updateContSize();
     store.set("cfg", cfg);
-    for (const [k, el] of Object.entries(inputs)) el.wrap.classList.toggle("changed", cfg[k] !== DEFAULTS[k]);
+    store.set("exp", exp);
+    for (const [k, el] of Object.entries(inputs)) el.wrap.classList.toggle("changed", el.src()[k] !== el.def[k]);
     const same = (P) => Object.keys(P).every((k) => P[k] === cfg[k]);
     for (const b of document.querySelectorAll("#presets button")) { const P = presetOf(b.dataset.preset); b.setAttribute("aria-pressed", String(!!P && same(P))); }
     clearTimeout(applyTimer);
@@ -877,14 +896,16 @@
     const det = document.createElement("details"); det.className = "group"; if (grp.open) det.open = true;
     const sum = document.createElement("summary"); sum.textContent = grp.name; det.appendChild(sum);
     const box = document.createElement("div"); box.className = "fields"; det.appendChild(box);
+    if (grp.note) { const p = document.createElement("p"); p.className = "hint"; p.style.cssText = "color:var(--muted);font-size:12px;margin:0 0 8px"; p.textContent = grp.note; box.appendChild(p); }
     for (const f of grp.fields) {
       const id = "f-" + f.k;
+      const src = grp.exp ? () => exp : () => cfg, def = grp.exp ? EXP_DEFAULTS : DEFAULTS;
       if (f.toggle) {
         const row = document.createElement("label"); row.className = "toggle";
         row.innerHTML = `<input type="checkbox" id="${id}"> ${f.label}`;
-        const cb = row.querySelector("input"); cb.checked = !!cfg[f.k];
-        cb.onchange = () => { cfg[f.k] = cb.checked; settingsChanged(); };
-        inputs[f.k] = { wrap: row, set: (v) => (cb.checked = !!v) };
+        const cb = row.querySelector("input"); cb.checked = !!src()[f.k];
+        cb.onchange = () => { src()[f.k] = cb.checked; settingsChanged(); };
+        inputs[f.k] = { wrap: row, set: (v) => (cb.checked = !!v), src, def };
         box.appendChild(row); continue;
       }
       const row = document.createElement("div"); row.className = "field";
@@ -893,12 +914,12 @@
         `<input type="range" id="${id}-r" min="${f.min}" max="${f.max}" step="${f.step}" aria-label="${f.label}">`;
       const num = row.querySelector('input[type="number"]'), rng = row.querySelector('input[type="range"]');
       const put = (v) => { num.value = (+v).toFixed(decimals(f.step)); rng.value = v; };
-      put(cfg[f.k]);
+      put(src()[f.k]);
       // Height limits must be multiples of 16 inside their range, the same rule Tectonic enforces.
       const fix = (v) => f.snap ? Math.min(f.max, Math.max(f.min, Math.round(v / f.snap) * f.snap)) : v;
-      rng.oninput = () => { cfg[f.k] = fix(+(+rng.value).toFixed(6)); num.value = (+cfg[f.k]).toFixed(decimals(f.step)); settingsChanged(); };
-      num.onchange = () => { const v = parseFloat(num.value); if (!Number.isFinite(v)) { put(cfg[f.k]); return; } cfg[f.k] = fix(v); put(cfg[f.k]); settingsChanged(); };
-      inputs[f.k] = { wrap: row, set: put };
+      rng.oninput = () => { src()[f.k] = fix(+(+rng.value).toFixed(6)); num.value = (+src()[f.k]).toFixed(decimals(f.step)); settingsChanged(); };
+      num.onchange = () => { const v = parseFloat(num.value); if (!Number.isFinite(v)) { put(src()[f.k]); return; } src()[f.k] = fix(v); put(src()[f.k]); settingsChanged(); };
+      inputs[f.k] = { wrap: row, set: put, src, def };
       box.appendChild(row);
     }
     groupsEl.appendChild(det);
@@ -907,7 +928,7 @@
     b.onclick = () => {
       const P = presetOf(b.dataset.preset); if (!P) return;
       cfg = Object.assign({}, P);
-      for (const [k, el] of Object.entries(inputs)) el.set(cfg[k]);
+      for (const [k, el] of Object.entries(inputs)) el.set(el.src()[k]);
       settingsChanged();
     };
   }
@@ -1006,7 +1027,7 @@
     if (!used.length) return fail("No Tectonic settings found in that file.");
     imported = next; store.set("imported", imported); store.set("importedRaw", raw); showImportedPreset();
     cfg = Object.assign({}, imported);
-    for (const [k, el] of Object.entries(inputs)) el.set(cfg[k]);
+    for (const [k, el] of Object.entries(inputs)) el.set(el.src()[k]);
     settingsChanged();
     if (next.max_y !== 320 || next.min_y !== -64) notes.push(`Height limits ${next.min_y} to ${next.max_y} are applied.`);
     msg.hidden = false; msg.className = "importmsg";

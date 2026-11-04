@@ -41,6 +41,71 @@ const TEngine = (() => {
     }
   }
 
+  // ---------- experimental continents (not in the game) ----------
+  // Cells about EXP_CELL noise units across decide where continents are; distance to the nearest separating cell
+  // becomes how far inland a block is; a slow fractal warp bends the cell outlines; Tectonic's own continent
+  // noise with its three biggest layers switched off adds the coastline detail. Integer hashing, plain arithmetic
+  // and square roots only, so a Java port can give the same bits.
+  // EXP_T0 is where Tectonic's coast sits in |continent noise| (at ocean offset -0.8); EXP_GAIN matches the slope of
+  // Tectonic's big layers at the coast; inland the rise eases off toward EXP_RISE, about where Tectonic's tops out.
+  const EXP_CELL = 1100, EXP_JITTER = 0.85, EXP_T0 = 0.43, EXP_GAIN = 3.0, EXP_RISE = 1.4, EXP_SMAX = 0.6, EXP_SMIN = -0.7;
+  function expContinentsField(positional, cfg) {
+    const r = positional.fromHashOf("tsa:continent_cells");
+    const S0 = Number(BigInt.asIntN(32, r.nextLong())), S1 = Number(BigInt.asIntN(32, r.nextLong()));
+    const C = EXP_CELL;
+    const landShare = cfg.exp_land ?? 0.4, joinChance = cfg.exp_join ?? 0.5, warp = (cfg.exp_warp ?? 1.2) * C;
+    const detailK = cfg.exp_detail ?? 1, gap = (cfg.exp_gap ?? 0.15) * C;
+    const wx = MCNoise.makeNoise(positional, "tsa:continent_warp_x", -10, [1, 1, 1]);
+    const wz = MCNoise.makeNoise(positional, "tsa:continent_warp_z", -10, [1, 1, 1]);
+    // Same seed and octaves as Tectonic's continent noise, biggest three layers off, original value factor kept,
+    // so the remaining layers are exactly the ones Tectonic adds today.
+    const det = MCNoise.makeNoise(positional, "minecraft:continentalness", -10, [0, 0, 0, 3, 2, 2, 1, 1, 1]);
+    det.valueFactor = 0.16666666666666666 / (0.1 * (1 + 1 / 9));
+    const H = (a, b, c) => {
+      let h = Math.imul(a, 0x27d4eb2d) ^ Math.imul(b, 0x165667b1) ^ Math.imul(c, 0x2c1b3c6d) ^ S0;
+      h = Math.imul(h ^ (h >>> 15), 0x85ebca6b) ^ S1;
+      h = Math.imul(h ^ (h >>> 13), 0xc2b2ae35);
+      return h ^ (h >>> 16);
+    };
+    const U = (h) => (h >>> 8) / 16777216;
+    const d = new Float64Array(25), isLand = new Uint8Array(25), id = new Int32Array(25);
+    return (u, v) => {
+      const qx = u + warp * wx.get(u, 0, v), qz = v + warp * wz.get(u, 0, v);
+      const i0 = Math.floor(qx / C), j0 = Math.floor(qz / C);
+      let dO = 4 * C, m = 0;
+      for (let dj = -2; dj <= 2; dj++) for (let di = -2; di <= 2; di++, m++) {
+        const i = i0 + di, j = j0 + dj;
+        const px = (i + 0.5 + (U(H(i, j, 1)) - 0.5) * EXP_JITTER) * C, pz = (j + 0.5 + (U(H(i, j, 2)) - 0.5) * EXP_JITTER) * C;
+        const ex = qx - px, ez = qz - pz, dist = Math.sqrt(ex * ex + ez * ez);
+        d[m] = dist;
+        isLand[m] = U(H(i, j, 3)) < landShare ? 1 : 0;
+        id[m] = H(i, j, 4);
+        if (!isLand[m] && dist < dO) dO = dist;
+      }
+      // How far inside each nearby land cell's continent the point is: half the gap between the distance to the
+      // nearest separating point and to the cell's own point. Ocean cells always separate; a neighbouring land
+      // cell separates (with an extra sea gap) unless the pair is merged. Taking the largest keeps it continuous.
+      let s = -Infinity;
+      for (let a = 0; a < 25; a++) {
+        const ia = a % 5, ja = (a / 5) | 0;
+        if (!isLand[a] || ia < 1 || ia > 3 || ja < 1 || ja > 3) continue;
+        let f = (dO - d[a]) / 2;
+        for (let b2 = 0; b2 < 25; b2++) {
+          if (b2 === a || !isLand[b2]) continue;
+          const ha = id[a], hb = id[b2];
+          const merged = U(H(ha ^ hb, (ha + hb) | 0, 5)) < joinChance;
+          if (!merged) { const g = (d[b2] - d[a]) / 2 - gap; if (g < f) f = g; }
+        }
+        if (f > s) s = f;
+      }
+      if (s > EXP_SMAX * C) s = EXP_SMAX * C;
+      if (!(s >= EXP_SMIN * C)) s = EXP_SMIN * C;
+      const t = s / C;
+      const big = t >= 0 ? EXP_T0 + EXP_GAIN * t / (1 + EXP_GAIN * t / EXP_RISE) : EXP_T0 + EXP_GAIN * t;
+      return big + detailK * det.get(u, 0, v);
+    };
+  }
+
   class Engine {
     constructor(bundle, seed, cfg) {
       this.b = bundle; this.cfg = cfg; this.seed = seed;
@@ -153,7 +218,11 @@ const TEngine = (() => {
         case "mul": { const a = C("argument1"), b = C("argument2"); return () => { const v = a(); return v === 0 ? 0 : v * b(); }; }
         case "min": { const a = C("argument1"), b = C("argument2"); return () => Math.min(a(), b()); }
         case "max": { const a = C("argument1"), b = C("argument2"); return () => Math.max(a(), b()); }
-        case "abs": { const a = C("argument"); return () => Math.abs(a()); }
+        case "abs": {
+          // Experimental continents replace |continent noise| inside raw_continents; everything downstream is Tectonic's.
+          if (this.cfg.exp_continents && n.argument === "tectonic:__constants/noise/continents") return this.expContinents();
+          const a = C("argument"); return () => Math.abs(a());
+        }
         case "square": { const a = C("argument"); return () => { const v = a(); return v * v; }; }
         case "cube": { const a = C("argument"); return () => { const v = a(); return v * v * v; }; }
         case "half_negative": { const a = C("argument"); return () => { const v = a(); return v > 0 ? v : v * 0.5; }; }
@@ -217,6 +286,13 @@ const TEngine = (() => {
           this.unsupported.add(t);
           return () => 0;
       }
+    }
+    // The replacement for |continent noise|, read at the same coordinates Tectonic's config_noise uses.
+    expContinents() {
+      const self = this, st = noiseState(this.cfg, "continents"), sx = this.ref("minecraft:shift_x"), sz = this.ref("minecraft:shift_z");
+      const field = expContinentsField(this.positional, this.cfg);
+      if (st.smooth) return () => field((self.x + sx()) * st.scale, (self.z + sz()) * st.scale);
+      return () => field(self.x * st.scale + sx(), self.z * st.scale + sz());
     }
     compileSpline(s) {
       if (typeof s === "number") { const v = f32(s); return () => v; }
