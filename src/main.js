@@ -56,7 +56,7 @@
     ] },
   ];
   // Experimental continents: kept apart from the Tectonic settings, so presets, import and export never touch them.
-  const EXP_DEFAULTS = { exp_continents: false, exp_land: 0.4, exp_join: 0.5, exp_warp: 1.2, exp_detail: 1, exp_gap: 0.15 };
+  const EXP_DEFAULTS = { exp_continents: false, exp_land: 0.5, exp_join: 0.5, exp_warp: 1.2, exp_detail: 1, exp_gap: 0.15 };
   GROUPS.push({ name: "Experimental continents", exp: true,
     note: "Not in the game yet. Cells decide where continents go and how they are shaped; Tectonic still makes the terrain, coasts and biomes. Continents scale still sets the size and ocean offset still sets how much is ocean.",
     fields: [

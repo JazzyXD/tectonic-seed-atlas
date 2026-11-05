@@ -624,17 +624,25 @@ const TEngine = (() => {
   // and square roots only, so a Java port can give the same bits.
   // EXP_T0 is where Tectonic's coast sits in |continent noise| (at ocean offset -0.8); EXP_GAIN matches the slope of
   // Tectonic's big layers at the coast; inland the rise eases off toward EXP_RISE, about where Tectonic's tops out.
-  const EXP_CELL = 1100, EXP_JITTER = 0.85, EXP_T0 = 0.43, EXP_GAIN = 3.0, EXP_RISE = 1.4, EXP_SMAX = 0.6, EXP_SMIN = -0.7;
+  // EXP_SMIN and EXP_SMAX are where the 5x5 cell window stops being able to see every cell that matters, so the
+  // value is held there and never jumps when the window moves on.
+  const EXP_CELL = 1100, EXP_JITTER = 0.85, EXP_T0 = 0.43, EXP_GAIN = 3.0, EXP_RISE = 1.8, EXP_SMAX = 0.4, EXP_SMIN = -0.38;
+  // Offshore cubic: value EXP_T0 and slope EXP_GAIN at the coast, value 0 and slope 0 at EXP_SMIN.
+  const EXP_SEA_MID = 0.17, EXP_SEA_AMP = 0.35;
+  const EXP_M = -EXP_SMIN, EXP_C3 = (EXP_GAIN * EXP_M - 2 * EXP_T0) / (EXP_M * EXP_M * EXP_M), EXP_C2 = (EXP_GAIN + 3 * EXP_C3 * EXP_M * EXP_M) / (2 * EXP_M);
   function expContinentsField(positional, cfg) {
     const r = positional.fromHashOf("tsa:continent_cells");
     const S0 = Number(BigInt.asIntN(32, r.nextLong())), S1 = Number(BigInt.asIntN(32, r.nextLong()));
     const C = EXP_CELL;
-    const landShare = cfg.exp_land ?? 0.4, joinChance = cfg.exp_join ?? 0.5, warp = (cfg.exp_warp ?? 1.2) * C;
+    const landShare = cfg.exp_land ?? 0.5, joinChance = cfg.exp_join ?? 0.5, warp = (cfg.exp_warp ?? 1.2) * C;
     const detailK = cfg.exp_detail ?? 1, gap = (cfg.exp_gap ?? 0.15) * C;
     const wx = MCNoise.makeNoise(positional, "tsa:continent_warp_x", -10, [1, 1, 1]);
     const wz = MCNoise.makeNoise(positional, "tsa:continent_warp_z", -10, [1, 1, 1]);
     // Same seed and octaves as Tectonic's continent noise, biggest three layers off, original value factor kept,
     // so the remaining layers are exactly the ones Tectonic adds today.
+    // Open ocean gets its own slow noise so it is not one flat floor: raising ocean offset then floods it in
+    // patches, the way Tectonic's ocean does, instead of all at once.
+    const sea = MCNoise.makeNoise(positional, "tsa:open_ocean", -10, [1, 1, 1]);
     const det = MCNoise.makeNoise(positional, "minecraft:continentalness", -10, [0, 0, 0, 3, 2, 2, 1, 1, 1]);
     det.valueFactor = 0.16666666666666666 / (0.1 * (1 + 1 / 9));
     const H = (a, b, c) => {
@@ -663,8 +671,7 @@ const TEngine = (() => {
       // cell separates (with an extra sea gap) unless the pair is merged. Taking the largest keeps it continuous.
       let s = -Infinity;
       for (let a = 0; a < 25; a++) {
-        const ia = a % 5, ja = (a / 5) | 0;
-        if (!isLand[a] || ia < 1 || ia > 3 || ja < 1 || ja > 3) continue;
+        if (!isLand[a]) continue;
         let f = (dO - d[a]) / 2;
         for (let b2 = 0; b2 < 25; b2++) {
           if (b2 === a || !isLand[b2]) continue;
@@ -677,7 +684,14 @@ const TEngine = (() => {
       if (s > EXP_SMAX * C) s = EXP_SMAX * C;
       if (!(s >= EXP_SMIN * C)) s = EXP_SMIN * C;
       const t = s / C;
-      const big = t >= 0 ? EXP_T0 + EXP_GAIN * t / (1 + EXP_GAIN * t / EXP_RISE) : EXP_T0 + EXP_GAIN * t;
+      // Offshore it starts with the same slope and keeps falling out to open ocean, where it fades into the open
+      // ocean noise, so raising ocean offset moves coasts outward steadily and floods open ocean in patches.
+      let big;
+      if (t >= 0) big = EXP_T0 + EXP_GAIN * t / (1 + EXP_GAIN * t / EXP_RISE);
+      else {
+        const w = t / EXP_SMIN, open = Math.max(0, EXP_SEA_MID + EXP_SEA_AMP * sea.get(u, 0, v));
+        big = EXP_T0 + t * (EXP_GAIN + t * (EXP_C2 + t * EXP_C3)) + w * w * open;
+      }
       return big + detailK * det.get(u, 0, v);
     };
   }
@@ -1047,7 +1061,7 @@ const TEngine = (() => {
     }
   }
 
-  return { Engine, Sampler, configValue };
+  return { Engine, Sampler, configValue, expContinentsField };
 })();
 if (typeof module !== "undefined") module.exports = TEngine;
 
@@ -1375,7 +1389,7 @@ onmessage = (ev) => {
     ] },
   ];
   // Experimental continents: kept apart from the Tectonic settings, so presets, import and export never touch them.
-  const EXP_DEFAULTS = { exp_continents: false, exp_land: 0.4, exp_join: 0.5, exp_warp: 1.2, exp_detail: 1, exp_gap: 0.15 };
+  const EXP_DEFAULTS = { exp_continents: false, exp_land: 0.5, exp_join: 0.5, exp_warp: 1.2, exp_detail: 1, exp_gap: 0.15 };
   GROUPS.push({ name: "Experimental continents", exp: true,
     note: "Not in the game yet. Cells decide where continents go and how they are shaped; Tectonic still makes the terrain, coasts and biomes. Continents scale still sets the size and ocean offset still sets how much is ocean.",
     fields: [
