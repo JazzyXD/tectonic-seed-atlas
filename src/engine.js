@@ -59,7 +59,7 @@ const TEngine = (() => {
     const S0 = Number(BigInt.asIntN(32, r.nextLong())), S1 = Number(BigInt.asIntN(32, r.nextLong()));
     const C = EXP_CELL;
     const landShare = cfg.exp_land ?? 0.5, joinChance = cfg.exp_join ?? 0.5, warp = (cfg.exp_warp ?? 1.2) * C;
-    const detailK = cfg.exp_detail ?? 1, gap = (cfg.exp_gap ?? 0.15) * C;
+    const gap = (cfg.exp_gap ?? 0.15) * C;
     const wx = MCNoise.makeNoise(positional, "tsa:continent_warp_x", -10, [1, 1, 1]);
     const wz = MCNoise.makeNoise(positional, "tsa:continent_warp_z", -10, [1, 1, 1]);
     // Same seed and octaves as Tectonic's continent noise, biggest three layers off, original value factor kept,
@@ -116,7 +116,7 @@ const TEngine = (() => {
         const w = t / EXP_SMIN, open = Math.max(0, EXP_SEA_MID + EXP_SEA_AMP * sea.get(u, 0, v));
         big = EXP_T0 + t * (EXP_GAIN + t * (EXP_C2 + t * EXP_C3)) + w * w * open;
       }
-      return big + detailK * det.get(u, 0, v);
+      return big + det.get(u, 0, v);
     };
   }
 

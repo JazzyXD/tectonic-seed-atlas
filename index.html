@@ -635,7 +635,7 @@ const TEngine = (() => {
     const S0 = Number(BigInt.asIntN(32, r.nextLong())), S1 = Number(BigInt.asIntN(32, r.nextLong()));
     const C = EXP_CELL;
     const landShare = cfg.exp_land ?? 0.5, joinChance = cfg.exp_join ?? 0.5, warp = (cfg.exp_warp ?? 1.2) * C;
-    const detailK = cfg.exp_detail ?? 1, gap = (cfg.exp_gap ?? 0.15) * C;
+    const gap = (cfg.exp_gap ?? 0.15) * C;
     const wx = MCNoise.makeNoise(positional, "tsa:continent_warp_x", -10, [1, 1, 1]);
     const wz = MCNoise.makeNoise(positional, "tsa:continent_warp_z", -10, [1, 1, 1]);
     // Same seed and octaves as Tectonic's continent noise, biggest three layers off, original value factor kept,
@@ -692,7 +692,7 @@ const TEngine = (() => {
         const w = t / EXP_SMIN, open = Math.max(0, EXP_SEA_MID + EXP_SEA_AMP * sea.get(u, 0, v));
         big = EXP_T0 + t * (EXP_GAIN + t * (EXP_C2 + t * EXP_C3)) + w * w * open;
       }
-      return big + detailK * det.get(u, 0, v);
+      return big + det.get(u, 0, v);
     };
   }
 
@@ -1389,7 +1389,7 @@ onmessage = (ev) => {
     ] },
   ];
   // Experimental continents: kept apart from the Tectonic settings, so presets, import and export never touch them.
-  const EXP_DEFAULTS = { exp_continents: false, exp_land: 0.5, exp_join: 0.5, exp_warp: 1.2, exp_detail: 1, exp_gap: 0.15 };
+  const EXP_DEFAULTS = { exp_continents: false, exp_land: 0.5, exp_join: 0.5, exp_warp: 1.2, exp_gap: 0.15 };
   GROUPS.push({ name: "Experimental continents", exp: true,
     note: "Not in the game yet. Cells decide where continents go and how they are shaped; Tectonic still makes the terrain, coasts and biomes. Continents scale still sets the size and ocean offset still sets how much is ocean.",
     fields: [
@@ -1397,7 +1397,6 @@ onmessage = (ev) => {
       { k: "exp_land", label: "Land share", note: "Share of cells that become land", min: 0.05, max: 0.95, step: 0.01 },
       { k: "exp_join", label: "Merge chance", note: "How often neighbouring continents join into one", min: 0, max: 1, step: 0.05 },
       { k: "exp_warp", label: "Shape wildness", note: "Bends outlines into arms, bays and necks", min: 0, max: 2, step: 0.05 },
-      { k: "exp_detail", label: "Coastline detail", note: "Strength of Tectonic's own small-scale coast noise", min: 0, max: 2, step: 0.05 },
       { k: "exp_gap", label: "Ocean gap", note: "Width of the sea between continents that don't merge", min: 0, max: 0.4, step: 0.01 },
     ] });
   const store = {
@@ -1406,6 +1405,7 @@ onmessage = (ev) => {
   };
   let cfg = Object.assign({}, STARTER, store.get("cfg") || {});
   const exp = Object.assign({}, EXP_DEFAULTS, store.get("exp") || {});
+  delete exp.exp_detail;   // the coastline detail slider is gone: always Tectonic's own strength
   let seedText = store.get("seed") ?? "1234567890";
   let seedValue = 0n;
 

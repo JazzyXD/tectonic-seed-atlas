@@ -56,7 +56,7 @@
     ] },
   ];
   // Experimental continents: kept apart from the Tectonic settings, so presets, import and export never touch them.
-  const EXP_DEFAULTS = { exp_continents: false, exp_land: 0.5, exp_join: 0.5, exp_warp: 1.2, exp_detail: 1, exp_gap: 0.15 };
+  const EXP_DEFAULTS = { exp_continents: false, exp_land: 0.5, exp_join: 0.5, exp_warp: 1.2, exp_gap: 0.15 };
   GROUPS.push({ name: "Experimental continents", exp: true,
     note: "Not in the game yet. Cells decide where continents go and how they are shaped; Tectonic still makes the terrain, coasts and biomes. Continents scale still sets the size and ocean offset still sets how much is ocean.",
     fields: [
@@ -64,7 +64,6 @@
       { k: "exp_land", label: "Land share", note: "Share of cells that become land", min: 0.05, max: 0.95, step: 0.01 },
       { k: "exp_join", label: "Merge chance", note: "How often neighbouring continents join into one", min: 0, max: 1, step: 0.05 },
       { k: "exp_warp", label: "Shape wildness", note: "Bends outlines into arms, bays and necks", min: 0, max: 2, step: 0.05 },
-      { k: "exp_detail", label: "Coastline detail", note: "Strength of Tectonic's own small-scale coast noise", min: 0, max: 2, step: 0.05 },
       { k: "exp_gap", label: "Ocean gap", note: "Width of the sea between continents that don't merge", min: 0, max: 0.4, step: 0.01 },
     ] });
   const store = {
@@ -73,6 +72,7 @@
   };
   let cfg = Object.assign({}, STARTER, store.get("cfg") || {});
   const exp = Object.assign({}, EXP_DEFAULTS, store.get("exp") || {});
+  delete exp.exp_detail;   // the coastline detail slider is gone: always Tectonic's own strength
   let seedText = store.get("seed") ?? "1234567890";
   let seedValue = 0n;
 
